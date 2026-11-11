@@ -124,6 +124,7 @@ class PayPalPaymentProvider:
             headers: dict[str, str] = {
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/json",
+                "Prefer": "return=representation",
             }
             if json_body is not None:
                 headers["Content-Type"] = "application/json"

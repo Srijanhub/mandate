@@ -93,7 +93,11 @@ class AstropodsLLM:
             }
         )
         content = data["choices"][0]["message"].get("content") or "{}"
-        return dict(json.loads(content))
+        parsed = dict(json.loads(content))
+        for key in ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount"):
+            if key in parsed and parsed[key] is not None and not isinstance(parsed[key], str):
+                parsed[key] = str(parsed[key])
+        return parsed
 
     async def rank_candidates(
         self,

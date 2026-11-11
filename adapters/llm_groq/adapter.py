@@ -50,7 +50,11 @@ class GroqLLM:
                 {"role": "user", "content": text},
             ],
         )
-        return json.loads(resp.choices[0].message.content or "{}")
+        data = dict(json.loads(resp.choices[0].message.content or "{}"))
+        for key in ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount"):
+            if key in data and data[key] is not None and not isinstance(data[key], str):
+                data[key] = str(data[key])
+        return data
 
     async def rank_candidates(
         self,

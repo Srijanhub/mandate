@@ -19,6 +19,7 @@ from apps.api.main import create_app
 @pytest.mark.asyncio
 async def test_partner_apis_fallback_and_bryntum_timelines() -> None:
     settings = Settings(
+        _env_file=None,
         database_url="sqlite+aiosqlite:///:memory:",
         paypal_mode="mock",
         catalog_provider="mock",
@@ -191,6 +192,7 @@ async def test_partner_apis_live_transports_and_astropods_llm() -> None:
         transport=httpx.MockTransport(astro_handler),
     )
     settings = Settings(
+        _env_file=None,
         database_url="sqlite+aiosqlite:///:memory:",
         paypal_mode="mock",
         catalog_provider="mock",

@@ -1,0 +1,962 @@
+{
+  "info": {
+    "name": "Mandate Core & Mandate Shop API",
+    "description": "Deterministic spending firewall, state machine, snapshot merger, PayPal Orders v2 enforcement, and tamper-evident SHA-256 audit ledger.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Ready",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ready",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ready"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Execute Command",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/commands",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "commands"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Compile Mandate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/compile",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "compile"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Confirm Mandate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/{mandate_id}/confirm",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "{mandate_id}",
+            "confirm"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Amend Mandate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/{mandate_id}/amend",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "{mandate_id}",
+            "amend"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Revoke All Mandates",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/revoke",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "revoke"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "List Mandates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Mandate",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/{mandate_id}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "{mandate_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Propose Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/propose",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "propose"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Lock Case Cart",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/lock",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "lock"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Approve Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/approve",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "approve"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Approve Case Only",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/approve-only",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "approve-only"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Authorize Case Only",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/authorize-only",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "authorize-only"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Capture Case Only",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/capture-only",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "capture-only"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Hold Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/hold",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "hold"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Resume Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/resume",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "resume"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Cancel Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/cancel",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "cancel"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Recheck Case",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/recheck",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "recheck"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "List Cases",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Case",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Explain Case",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/why",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "why"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Case Snapshots",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/snapshots",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "snapshots"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Diff Case Snapshots",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{case_id}/diff",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{case_id}",
+            "diff"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Catalog",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "search"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Catalog Item",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/{product_id}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "{product_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Shopping Options",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shopping/options",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "shopping",
+            "options"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Shopping Pick",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shopping/pick",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "shopping",
+            "pick"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Admin Bump Price",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/catalog/{product_id}/price",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "catalog",
+            "{product_id}",
+            "price"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Admin Toggle Stock",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/catalog/{product_id}/stock",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "catalog",
+            "{product_id}",
+            "stock"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "List Ledger",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Verify Ledger",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger/verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger",
+            "verify"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Agent Trust Score",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger/trust-score",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger",
+            "trust-score"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Paypal Webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/webhooks/paypal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "webhooks",
+            "paypal"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Reset Demo Lab",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/demo-lab/reset",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "demo-lab",
+            "reset"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Tamper Ledger Row",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/demo-lab/tamper-ledger/{seq}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "demo-lab",
+            "tamper-ledger",
+            "{seq}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Run Red Team Scenario",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/demo-lab/run/{scenario}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "demo-lab",
+            "run",
+            "{scenario}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Check Email Agent Proposal",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/packs/email/check",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "packs",
+            "email",
+            "check"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    }
+  ]
+}

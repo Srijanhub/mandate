@@ -1,0 +1,17 @@
+{
+  "pack": "shopping",
+  "version": "1.0",
+  "description": "Default Mandate Shop deterministic policy rules",
+  "rules": [
+    "mandate_active",
+    "expires_at",
+    "max_total",
+    "max_spend_per_day",
+    "max_spend_per_week",
+    "max_transactions",
+    "seller_policy",
+    "deliver_by",
+    "category_policy",
+    "stock_availability"
+  ]
+}

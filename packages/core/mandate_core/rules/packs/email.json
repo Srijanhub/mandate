@@ -1,0 +1,11 @@
+{
+  "pack": "email",
+  "version": "1.0",
+  "description": "Domain-agnostic proof pack for an autonomous email-sending agent",
+  "rules": [
+    "mandate_active",
+    "expires_at",
+    "max_recipients",
+    "allowlist_domain"
+  ]
+}

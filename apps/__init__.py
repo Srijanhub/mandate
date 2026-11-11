@@ -1,0 +1,1 @@
+"""Mandate Shop FastAPI Backend."""

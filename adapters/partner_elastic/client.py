@@ -120,6 +120,12 @@ class ElasticSearchAdapter:
                     f"{self.url}/_cluster/health",
                     headers=self._headers(),
                 )
+                if resp.status_code in (404, 410):
+                    # Elastic Cloud Serverless returns 410 for /_cluster/health; root / returns cluster info.
+                    resp = await client.get(
+                        f"{self.url}/",
+                        headers=self._headers(),
+                    )
                 return {
                     "configured": True,
                     "ok": resp.status_code < 400,
@@ -194,10 +200,24 @@ class ElasticSearchAdapter:
                     {"match_all": {}}
                     if not query.strip()
                     else {
-                        "multi_match": {
-                            "query": query,
-                            "fields": fields,
-                            "fuzziness": "AUTO",
+                        "bool": {
+                            "should": [
+                                {
+                                    "multi_match": {
+                                        "query": query,
+                                        "fields": fields,
+                                        "fuzziness": "AUTO",
+                                    }
+                                },
+                                {
+                                    "multi_match": {
+                                        "query": query,
+                                        "fields": fields,
+                                        "type": "phrase_prefix",
+                                    }
+                                },
+                            ],
+                            "minimum_should_match": 1,
                         }
                     }
                 ),

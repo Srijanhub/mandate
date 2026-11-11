@@ -302,3 +302,20 @@ async def test_partner_apis_live_transports_and_astropods_llm() -> None:
         mandate=mandate, snapshot=snap, untrusted_product_text="Nice soy candle"
     )
     assert verdict.verdict == "ok"
+
+    # Elastic Cloud Serverless disables /_cluster/health (410) and probes root /
+    def serverless_elastic_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/_cluster/health":
+            return httpx.Response(410, json={"status": 410})
+        if request.url.path == "/":
+            return httpx.Response(200, json={"name": "serverless"})
+        return httpx.Response(404)
+
+    serverless_elastic = ElasticSearchAdapter(
+        url="https://serverless.es.example.cloud:443",
+        api_key="es-serverless-key",
+        transport=httpx.MockTransport(serverless_elastic_handler),
+    )
+    serverless_probe = await serverless_elastic.probe()
+    assert serverless_probe["ok"] is True
+    assert serverless_probe["status_code"] == 200

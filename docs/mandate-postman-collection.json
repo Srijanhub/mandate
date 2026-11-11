@@ -679,6 +679,32 @@
       }
     },
     {
+      "name": "Shopping Agent Propose",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shopping/agent",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "shopping",
+            "agent"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
       "name": "Shopping Pick",
       "request": {
         "method": "POST",

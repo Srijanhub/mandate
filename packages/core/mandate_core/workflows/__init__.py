@@ -5,6 +5,7 @@ from .shopping import (
     build_proposal_from_product,
     compile_mandate_from_text,
     heuristic_injection_audit,
+    run_shopping_agent,
     sanitize_untrusted_text,
     search_and_ask_preference,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "build_proposal_from_product",
     "compile_mandate_from_text",
     "heuristic_injection_audit",
+    "run_shopping_agent",
     "sanitize_untrusted_text",
     "search_and_ask_preference",
 ]

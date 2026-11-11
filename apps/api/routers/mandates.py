@@ -9,9 +9,16 @@ from mandate_core.domain.models import Mandate, Money
 from mandate_core.workflows import compile_mandate_from_text
 from pydantic import BaseModel, Field
 
+from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
+from apps.api.schemas import (
+    MandateDraftResponse,
+    MandateListResponse,
+    MandateResponse,
+    RevokeAllResponse,
+)
 
-router = APIRouter(prefix="/mandates", tags=["Mandates"])
+router = APIRouter(prefix="/mandates", tags=["Mandates"], dependencies=[Depends(require_user_auth)])
 
 
 class CompileMandateRequest(BaseModel):
@@ -40,34 +47,34 @@ class RevokeRequest(BaseModel):
     actor: str = "user"
 
 
-@router.post("/compile", status_code=201)
+@router.post("/compile", status_code=201, response_model=MandateDraftResponse)
 async def compile_mandate(
     body: CompileMandateRequest,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> MandateDraftResponse:
     draft: Mandate = await compile_mandate_from_text(
         body.prompt, owner_id=body.owner_id, llm=container.llm
     )
     saved = await container.orchestrator.create_mandate_draft(draft, actor=body.owner_id)
-    return {"mandate": saved.model_dump(mode="json"), "needs_confirm": True}
+    return MandateDraftResponse(mandate=saved, needs_confirm=True)
 
 
-@router.post("/{mandate_id}/confirm")
+@router.post("/{mandate_id}/confirm", response_model=MandateResponse)
 async def confirm_mandate(
     mandate_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> MandateResponse:
     confirmed = await container.orchestrator.confirm_mandate(mandate_id, actor=actor)
-    return {"mandate": confirmed.model_dump(mode="json")}
+    return MandateResponse(mandate=confirmed)
 
 
-@router.post("/{mandate_id}/amend")
+@router.post("/{mandate_id}/amend", response_model=MandateDraftResponse)
 async def amend_mandate(
     mandate_id: str,
     body: AmendMandateRequest,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> MandateDraftResponse:
     current = await container.store.get_mandate(mandate_id)
     if current is None:
         raise NotFoundError(f"Mandate {mandate_id} not found")
@@ -96,35 +103,36 @@ async def amend_mandate(
     amended = await container.orchestrator.amend_mandate(
         mandate_id, updates=updates, actor=body.actor
     )
-    return {"mandate": amended.model_dump(mode="json"), "needs_confirm": True}
+    return MandateDraftResponse(mandate=amended, needs_confirm=True)
 
 
-@router.post("/revoke")
+@router.post("/revoke", response_model=RevokeAllResponse)
 async def revoke_all_mandates(
     body: RevokeRequest | None = None,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> RevokeAllResponse:
     req = body or RevokeRequest()
-    return await container.orchestrator.revoke_all(reason=req.reason, actor=req.actor)
+    res = await container.orchestrator.revoke_all(reason=req.reason, actor=req.actor)
+    return RevokeAllResponse(**res)
 
 
-@router.get("")
+@router.get("", response_model=MandateListResponse)
 async def list_mandates(
     owner_id: str | None = None,
     limit: int = 50,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> MandateListResponse:
     rows = await container.store.list_mandates(owner_id=owner_id, limit=limit)
-    return {"mandates": [m.model_dump(mode="json") for m in rows]}
+    return MandateListResponse(mandates=rows)
 
 
-@router.get("/{mandate_id}")
+@router.get("/{mandate_id}", response_model=MandateResponse)
 async def get_mandate(
     mandate_id: str,
     version: int | None = None,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> MandateResponse:
     m = await container.store.get_mandate(mandate_id, version=version)
     if m is None:
         raise NotFoundError(f"Mandate {mandate_id} not found")
-    return {"mandate": m.model_dump(mode="json")}
+    return MandateResponse(mandate=m)

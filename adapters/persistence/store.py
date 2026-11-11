@@ -43,14 +43,27 @@ from .models import (
 _CURRENT_SESSION: ContextVar[AsyncSession | None] = ContextVar("mandate_current_session", default=None)
 
 
+def normalize_database_url(database_url: str) -> str:
+    """Normalize Render/Heroku postgres:// or postgresql:// URLs for asyncpg."""
+    url = database_url.strip()
+    if url.startswith("postgres://"):
+        url = "postgresql+asyncpg://" + url[len("postgres://") :]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+    if url.startswith("postgresql+asyncpg://") and "sslmode=" in url:
+        url = url.replace("sslmode=", "ssl=")
+    return url
+
+
 def create_engine_and_sessionmaker(
     database_url: str,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
-    if database_url.startswith("sqlite"):
-        if ":///" in database_url and not database_url.endswith(":memory:"):
-            raw_path = database_url.split(":///", 1)[1]
+    normalized_url = normalize_database_url(database_url)
+    if normalized_url.startswith("sqlite"):
+        if ":///" in normalized_url and not normalized_url.endswith(":memory:"):
+            raw_path = normalized_url.split(":///", 1)[1]
             Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
-        engine = create_async_engine(database_url, echo=False)
+        engine = create_async_engine(normalized_url, echo=False)
 
         @event.listens_for(engine.sync_engine, "connect")
         def _set_sqlite_pragmas(dbapi_conn: Any, _rec: Any) -> None:
@@ -59,7 +72,7 @@ def create_engine_and_sessionmaker(
             cursor.execute("PRAGMA busy_timeout=5000;")
             cursor.close()
     else:
-        engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
+        engine = create_async_engine(normalized_url, echo=False, pool_pre_ping=True)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     return engine, session_factory

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends
 from mandate_core.domain.errors import NotFoundError
 from mandate_core.domain.models import CaseState, Proposal
@@ -10,9 +8,17 @@ from mandate_core.recheck import Checkpoint
 from mandate_core.workflows import build_proposal_from_product
 from pydantic import BaseModel, Field
 
+from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
+from apps.api.schemas import (
+    CaseListResponse,
+    CaseResponse,
+    SnapshotDiffResponse,
+    SnapshotListResponse,
+    WhyResponse,
+)
 
-router = APIRouter(prefix="/cases", tags=["Cases"])
+router = APIRouter(prefix="/cases", tags=["Cases"], dependencies=[Depends(require_user_auth)])
 
 
 class ProposeCaseRequest(BaseModel):
@@ -43,11 +49,11 @@ class AuthorizeRequest(BaseModel):
     actor: str = "user"
 
 
-@router.post("/propose", status_code=201)
+@router.post("/propose", status_code=201, response_model=CaseResponse)
 async def propose_case(
     body: ProposeCaseRequest,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     mandate = await container.store.get_mandate(body.mandate_id)
     if mandate is None:
         raise NotFoundError(f"Mandate {body.mandate_id} not found")
@@ -73,159 +79,161 @@ async def propose_case(
     case = await container.orchestrator.submit_proposal(prop, actor="shopping-agent")
     if body.lock_immediately and case.state == CaseState.PROPOSED:
         case = await container.orchestrator.lock_cart(case.case_id, actor="user")
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/lock")
+@router.post("/{case_id}/lock", response_model=CaseResponse)
 async def lock_case_cart(
     case_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.lock_cart(case_id, actor=actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/approve")
+@router.post("/{case_id}/approve", response_model=CaseResponse)
 async def approve_case(
     case_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.approve_and_capture(case_id, actor=actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/approve-only")
+@router.post("/{case_id}/approve-only", response_model=CaseResponse)
 async def approve_case_only(
     case_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.approve(case_id, actor=actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/authorize-only")
+@router.post("/{case_id}/authorize-only", response_model=CaseResponse)
 async def authorize_case_only(
     case_id: str,
     body: AuthorizeRequest | None = None,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     req = body or AuthorizeRequest()
     case = await container.orchestrator.authorize(
         case_id, existing_order_id=req.existing_order_id, actor=req.actor
     )
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/capture-only")
+@router.post("/{case_id}/capture-only", response_model=CaseResponse)
 async def capture_case_only(
     case_id: str,
     actor: str = "orchestrator",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.capture(case_id, actor=actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/hold")
+@router.post("/{case_id}/hold", response_model=CaseResponse)
 async def hold_case(
     case_id: str,
     body: HoldRequest | None = None,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     req = body or HoldRequest()
     case = await container.orchestrator.hold_case(
         case_id, duration_seconds=req.duration_seconds, actor=req.actor
     )
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/resume")
+@router.post("/{case_id}/resume", response_model=CaseResponse)
 async def resume_case(
     case_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.resume_case(case_id, actor=actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/cancel")
+@router.post("/{case_id}/cancel", response_model=CaseResponse)
 async def cancel_case(
     case_id: str,
     body: CancelRequest | None = None,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     req = body or CancelRequest()
     case = await container.orchestrator.cancel(case_id, reason=req.reason, actor=req.actor)
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.post("/{case_id}/recheck")
+@router.post("/{case_id}/recheck", response_model=CaseResponse)
 async def recheck_case(
     case_id: str,
     actor: str = "user",
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.orchestrator.recheck_case(
         case_id, checkpoint=Checkpoint.C7_BACKGROUND_SWEEP, actor=actor
     )
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.get("")
+@router.get("", response_model=CaseListResponse)
 async def list_cases(
     mandate_id: str | None = None,
     state: CaseState | None = None,
     limit: int = 50,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseListResponse:
     rows = await container.store.list_cases(mandate_id=mandate_id, state=state, limit=limit)
-    return {"cases": [c.model_dump(mode="json") for c in rows]}
+    return CaseListResponse(cases=rows)
 
 
-@router.get("/{case_id}")
+@router.get("/{case_id}", response_model=CaseResponse)
 async def get_case(
     case_id: str,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> CaseResponse:
     case = await container.store.get_case(case_id)
     if case is None:
         raise NotFoundError(f"Case {case_id} not found")
-    return {"case": case.model_dump(mode="json")}
+    return CaseResponse(case=case)
 
 
-@router.get("/{case_id}/why")
+@router.get("/{case_id}/why", response_model=WhyResponse)
 async def explain_case(
     case_id: str,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
-    return await container.orchestrator.explain_case(case_id)
+) -> WhyResponse:
+    data = await container.orchestrator.explain_case(case_id)
+    return WhyResponse.model_validate(data)
 
 
-@router.get("/{case_id}/snapshots")
+@router.get("/{case_id}/snapshots", response_model=SnapshotListResponse)
 async def list_case_snapshots(
     case_id: str,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> SnapshotListResponse:
     snaps = await container.store.list_snapshots(case_id)
-    return {"snapshots": [s.model_dump(mode="json") for s in snaps]}
+    return SnapshotListResponse(snapshots=snaps)
 
 
-@router.get("/{case_id}/diff")
+@router.get("/{case_id}/diff", response_model=SnapshotDiffResponse)
 async def diff_case_snapshots(
     case_id: str,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> SnapshotDiffResponse:
     snaps = await container.store.list_snapshots(case_id)
     if len(snaps) < 2:
-        return {"case_id": case_id, "diff": [], "snapshots_count": len(snaps)}
+        return SnapshotDiffResponse(case_id=case_id, diff=[], snapshots_count=len(snaps))
     findings = diff(snaps[0], snaps[-1])
-    return {
-        "case_id": case_id,
-        "before": snaps[0].model_dump(mode="json"),
-        "after": snaps[-1].model_dump(mode="json"),
-        "diff": [f.model_dump(mode="json") for f in findings],
-    }
+    return SnapshotDiffResponse(
+        case_id=case_id,
+        before=snaps[0],
+        after=snaps[-1],
+        diff=findings,
+        snapshots_count=len(snaps),
+    )

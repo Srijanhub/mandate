@@ -22,6 +22,7 @@ from apps.api.routers import (
     mandates,
     webhooks,
 )
+from apps.api.schemas import HealthResponse, ReadyResponse
 
 
 async def _recheck_worker_loop(container: AppContainer, stop_event: asyncio.Event) -> None:
@@ -94,19 +95,19 @@ def create_app(
             body["error"]["details"] = exc.details
         return JSONResponse(status_code=exc.status_code, content=body)
 
-    @app.get("/health", tags=["Health"])
-    async def health() -> dict[str, str]:
-        return {"status": "ok", "service": "mandate-api"}
+    @app.get("/health", tags=["Health"], response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        return HealthResponse(status="ok", service="mandate-api")
 
-    @app.get("/ready", tags=["Health"])
-    async def ready(request: Request) -> dict[str, Any]:
+    @app.get("/ready", tags=["Health"], response_model=ReadyResponse)
+    async def ready(request: Request) -> ReadyResponse:
         c: AppContainer = request.app.state.container
-        return {
-            "status": "ready",
-            "paypal_mode": c.settings.paypal_mode,
-            "catalog_provider": c.settings.catalog_provider,
-            "llm_provider": c.settings.llm_provider if c.llm else "deterministic",
-        }
+        return ReadyResponse(
+            status="ready",
+            paypal_mode=c.settings.paypal_mode,
+            catalog_provider=c.settings.catalog_provider,
+            llm_provider=c.settings.llm_provider if c.llm else "deterministic",
+        )
 
     app.include_router(commands.router)
     app.include_router(mandates.router)

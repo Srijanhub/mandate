@@ -5,9 +5,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 
-router = APIRouter(prefix="/commands", tags=["Commands"])
+router = APIRouter(prefix="/commands", tags=["Commands"], dependencies=[Depends(require_user_auth)])
 
 
 class CommandRequest(BaseModel):

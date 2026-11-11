@@ -73,6 +73,15 @@ async def test_api_unified_commands_r1_to_r9_email_pack_and_ledger_ag_grid() -> 
             assert why.status_code == 200
             assert len(why.json()["passed_checks"]) >= 8
 
+            # Invoke 2-tool shopping agent endpoint on active mandate
+            agent_res = await client.post(
+                "/shopping/agent",
+                json={"mandate_id": mandate_id, "query": "lavender candle"},
+            )
+            assert agent_res.status_code == 201
+            assert agent_res.json()["tools_exposed"] == ["search_products", "propose_purchase"]
+            assert agent_res.json()["case"]["state"] == "PROPOSED"
+
             # Webhook signature verification + dedup
             bad_wh = await client.post(
                 "/webhooks/paypal",
@@ -116,8 +125,69 @@ async def test_api_unified_commands_r1_to_r9_email_pack_and_ledger_ag_grid() -> 
             assert trust.status_code == 200
             assert 0.0 <= trust.json()["trust_score_percent"] <= 100.0
 
+            # Verify after R8 (/revoke), shopping agent refuses to propose on revoked mandate
+            revoked_agent = await client.post(
+                "/shopping/agent",
+                json={"mandate_id": mandate_id, "query": "lavender candle"},
+            )
+            assert revoked_agent.status_code == 201
+            assert revoked_agent.json()["case"] is None
+
+            # Verify OpenAPI schema exports typed Mandate / Case / LedgerVerificationResult schemas
+            openapi = (await client.get("/openapi.json")).json()
+            schemas = openapi["components"]["schemas"]
+            for model_name in (
+                "Mandate",
+                "Case",
+                "LedgerEntry",
+                "LedgerVerificationResult",
+                "AgentTrustScore",
+                "WhyResponse",
+            ):
+                assert model_name in schemas
+
             # R9: tamper a ledger row and verify chain catches it
             r9 = await client.post("/demo-lab/run/R9")
             assert r9.status_code == 200
             assert r9.json()["verify"]["valid"] is False
             assert r9.json()["verify"]["first_broken_seq"] == r9.json()["tampered_seq"]
+
+
+@pytest.mark.asyncio
+async def test_api_enforces_tokens_when_require_auth_is_enabled() -> None:
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        paypal_mode="mock",
+        catalog_provider="mock",
+        llm_provider="deterministic",
+        require_auth=True,
+        api_user_token="secret-user-token",
+        api_admin_token="secret-admin-token",
+        recheck_poll_interval_seconds=3600,
+    )
+    app = create_app(settings)
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # Public health remains open
+            assert (await client.get("/health")).status_code == 200
+
+            # Protected endpoints reject missing/wrong credentials
+            assert (await client.get("/ledger/verify")).status_code == 401
+            assert (
+                await client.post(
+                    "/admin/catalog/prod-gift-02/price",
+                    headers={"Authorization": "Bearer secret-user-token"},
+                    json={"new_amount": "55.00"},
+                )
+            ).status_code == 403
+
+            # Admin token succeeds
+            ok = await client.post(
+                "/admin/catalog/prod-gift-02/price",
+                headers={"Authorization": "Bearer secret-admin-token"},
+                json={"new_amount": "55.00"},
+            )
+            assert ok.status_code == 200
+            assert ok.json()["product"]["price"]["amount"] == "55.00"

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from mandate_core.domain.models import EmailProposal, Mandate, MandateStatus, Money, utcnow
 from mandate_core.rules import RuleContext, evaluate_rules
 from pydantic import BaseModel, Field
 
+from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
+from apps.api.schemas import EmailPolicyCheckResponse
 
-router = APIRouter(prefix="/packs/email", tags=["Domain-Agnostic Policy Packs"])
+router = APIRouter(
+    prefix="/packs/email",
+    tags=["Domain-Agnostic Policy Packs"],
+    dependencies=[Depends(require_user_auth)],
+)
 
 
 class EmailPolicyCheckRequest(BaseModel):
@@ -21,11 +26,11 @@ class EmailPolicyCheckRequest(BaseModel):
     allowed_recipient_domains: list[str] = Field(default_factory=lambda: ["company.com"])
 
 
-@router.post("/check")
+@router.post("/check", response_model=EmailPolicyCheckResponse)
 async def check_email_agent_proposal(
     body: EmailPolicyCheckRequest,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> EmailPolicyCheckResponse:
     """
     Section 9 Demo Beat: Reuses the exact same Mandate Core Rule Engine + Ledger
     for an autonomous email-sending agent (max_recipients + allowlist_domain).
@@ -59,8 +64,8 @@ async def check_email_agent_proposal(
             "summary": decision.plain_english_summary,
         },
     )
-    return {
-        "domain": "email",
-        "decision": decision.model_dump(mode="json"),
-        "ledger_seq": entry.seq,
-    }
+    return EmailPolicyCheckResponse(
+        domain="email",
+        decision=decision,
+        ledger_seq=entry.seq,
+    )

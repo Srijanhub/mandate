@@ -12,6 +12,7 @@ from sqlalchemy import update
 from adapters.catalog_mock import MockCatalog
 from adapters.paypal import MockPayPalProvider
 from adapters.persistence import LedgerEntryRow
+from apps.api.auth import require_admin_auth, require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 
 router = APIRouter(prefix="/demo-lab", tags=["Demo Lab (Red Team R1-R9)"])
@@ -27,7 +28,7 @@ def _require_demo_lab(container: AppContainer) -> tuple[MockCatalog, MockPayPalP
     return container.catalog, container.payment
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[Depends(require_admin_auth)])
 async def reset_demo_lab(container: AppContainer = Depends(get_container)) -> dict[str, Any]:
     catalog, paypal = _require_demo_lab(container)
     catalog.reset()
@@ -35,7 +36,7 @@ async def reset_demo_lab(container: AppContainer = Depends(get_container)) -> di
     return {"status": "reset"}
 
 
-@router.post("/tamper-ledger/{seq}")
+@router.post("/tamper-ledger/{seq}", dependencies=[Depends(require_admin_auth)])
 async def tamper_ledger_row(
     seq: int,
     container: AppContainer = Depends(get_container),
@@ -56,7 +57,7 @@ async def tamper_ledger_row(
     return {"tampered_seq": seq, "verify": verify_result}
 
 
-@router.post("/run/{scenario}")
+@router.post("/run/{scenario}", dependencies=[Depends(require_user_auth)])
 async def run_red_team_scenario(
     scenario: str,
     container: AppContainer = Depends(get_container),

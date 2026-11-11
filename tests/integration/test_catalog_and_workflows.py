@@ -255,3 +255,89 @@ async def test_gemini_and_groq_llm_adapters_with_mocked_clients() -> None:
     assert verdict.verdict == "flag"
     assert verdict.reasons == ["Unusual discount"]
 
+
+@pytest.mark.asyncio
+async def test_gemini_shopping_agent_2_tool_loop_never_touches_paypal() -> None:
+    from types import SimpleNamespace
+
+    from mandate_core.statemachine import Orchestrator
+    from mandate_core.workflows import run_shopping_agent
+
+    from adapters.llm_gemini import GeminiLLM
+    from adapters.paypal import MockPayPalProvider
+    from adapters.persistence import SqlAlchemyStateStore, create_engine_and_sessionmaker
+
+    engine, factory = create_engine_and_sessionmaker("sqlite+aiosqlite:///:memory:")
+    store = SqlAlchemyStateStore(engine, factory)
+    await store.init_schema()
+    try:
+        catalog = MockCatalog()
+        paypal = MockPayPalProvider()
+        orch = Orchestrator(store=store, catalog=catalog, payment=paypal)
+
+        mandate = Mandate(
+            intent_text="lavender candle under $60, verified sellers only",
+            max_total=Money.of("60.00", "USD"),
+            expires_at=utcnow() + timedelta(hours=1),
+            status=MandateStatus.ACTIVE,
+        )
+        await store.save_mandate(mandate)
+
+        seen_tools: list[list[str]] = []
+
+        class _FakeAgentInteractions:
+            def __init__(self) -> None:
+                self.turn = 0
+
+            def create(self, **kwargs: Any) -> Any:
+                self.turn += 1
+                seen_tools.append([t["name"] for t in kwargs.get("tools", [])])
+                if self.turn == 1:
+                    return SimpleNamespace(
+                        id="int-1",
+                        output_text="",
+                        steps=[
+                            SimpleNamespace(
+                                type="function_call",
+                                id="call-1",
+                                name="search_products",
+                                arguments={"query": "lavender candle", "limit": 5},
+                            )
+                        ],
+                    )
+                if self.turn == 2:
+                    return SimpleNamespace(
+                        id="int-2",
+                        output_text="",
+                        steps=[
+                            SimpleNamespace(
+                                type="function_call",
+                                id="call-2",
+                                name="propose_purchase",
+                                arguments={
+                                    "product_id": "prod-gift-02",
+                                    "quantity": 1,
+                                    "rationale": "Matches verified lavender candle under $60",
+                                },
+                            )
+                        ],
+                    )
+                return SimpleNamespace(id="int-3", output_text="Proposed prod-gift-02.", steps=[])
+
+        fake_client = SimpleNamespace(interactions=_FakeAgentInteractions())
+        gemini = GeminiLLM(api_key="test", client=fake_client)
+        result = await run_shopping_agent(
+            mandate=mandate,
+            query="lavender candle",
+            catalog=catalog,
+            orchestrator=orch,
+            llm=gemini,
+        )
+        assert result["tools_exposed"] == ["search_products", "propose_purchase"]
+        assert all(t == ["search_products", "propose_purchase"] for t in seen_tools)
+        assert result["case"] is not None
+        assert result["case"]["state"] == "PROPOSED"
+        assert result["case"]["proposal"]["product_id"] == "prod-gift-02"
+    finally:
+        await store.dispose()
+

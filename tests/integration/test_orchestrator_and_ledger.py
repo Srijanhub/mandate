@@ -159,3 +159,20 @@ async def test_paypal_http_provider_oauth_idempotency_and_void(monkeypatch: pyte
     voided = await provider.void_authorization("AUTH-PP-1", request_id="req-void-1")
     assert voided.status == "VOIDED"
     assert ("POST", "/v2/payments/authorizations/AUTH-PP-1/void", "req-void-1") in calls
+
+
+def test_normalize_render_postgres_urls_for_asyncpg() -> None:
+    from adapters.persistence import normalize_database_url
+
+    assert (
+        normalize_database_url("postgres://user:pass@host:5432/db?sslmode=require")
+        == "postgresql+asyncpg://user:pass@host:5432/db?ssl=require"
+    )
+    assert (
+        normalize_database_url("postgresql://user:pass@host:5432/db")
+        == "postgresql+asyncpg://user:pass@host:5432/db"
+    )
+    assert (
+        normalize_database_url("sqlite+aiosqlite:///./data/mandate.db")
+        == "sqlite+aiosqlite:///./data/mandate.db"
+    )

@@ -1,0 +1,3857 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mandate Core & Mandate Shop API",
+    "description": "Deterministic spending firewall, state machine, snapshot merger, PayPal Orders v2 enforcement, and tamper-evident SHA-256 audit ledger.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commands": {
+      "post": {
+        "tags": [
+          "Commands"
+        ],
+        "summary": "Execute Command",
+        "description": "Unified control-plane command endpoint.\nDeterministic `/` parser runs BEFORE any LLM call; untrusted sources are blocked.\nNatural language (non-`/` text) is treated as intent-only and compiles a DRAFT mandate.",
+        "operationId": "execute_command_commands_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Command Commands Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates/compile": {
+      "post": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Compile Mandate",
+        "operationId": "compile_mandate_mandates_compile_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompileMandateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates/{mandate_id}/confirm": {
+      "post": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Confirm Mandate",
+        "operationId": "confirm_mandate_mandates__mandate_id__confirm_post",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates/{mandate_id}/amend": {
+      "post": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Amend Mandate",
+        "operationId": "amend_mandate_mandates__mandate_id__amend_post",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendMandateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates/revoke": {
+      "post": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Revoke All Mandates",
+        "operationId": "revoke_all_mandates_mandates_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RevokeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAllResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates": {
+      "get": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "List Mandates",
+        "operationId": "list_mandates_mandates_get",
+        "parameters": [
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandates/{mandate_id}": {
+      "get": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Get Mandate",
+        "operationId": "get_mandate_mandates__mandate_id__get",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/propose": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Propose Case",
+        "operationId": "propose_case_cases_propose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/lock": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Lock Case Cart",
+        "operationId": "lock_case_cart_cases__case_id__lock_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/approve": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Approve Case",
+        "operationId": "approve_case_cases__case_id__approve_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/approve-only": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Approve Case Only",
+        "operationId": "approve_case_only_cases__case_id__approve_only_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/authorize-only": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Authorize Case Only",
+        "operationId": "authorize_case_only_cases__case_id__authorize_only_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthorizeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/capture-only": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Capture Case Only",
+        "operationId": "capture_case_only_cases__case_id__capture_only_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "orchestrator",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/hold": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Hold Case",
+        "operationId": "hold_case_cases__case_id__hold_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HoldRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/resume": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Resume Case",
+        "operationId": "resume_case_cases__case_id__resume_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/cancel": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Cancel Case",
+        "operationId": "cancel_case_cases__case_id__cancel_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/recheck": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Recheck Case",
+        "operationId": "recheck_case_cases__case_id__recheck_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "List Cases",
+        "operationId": "list_cases_cases_get",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CaseState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Get Case",
+        "operationId": "get_case_cases__case_id__get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/why": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Explain Case",
+        "operationId": "explain_case_cases__case_id__why_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/snapshots": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "List Case Snapshots",
+        "operationId": "list_case_snapshots_cases__case_id__snapshots_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{case_id}/diff": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Diff Case Snapshots",
+        "operationId": "diff_case_snapshots_cases__case_id__diff_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotDiffResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/search": {
+      "get": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Search Catalog",
+        "operationId": "search_catalog_catalog_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "verified_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Verified Only"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/{product_id}": {
+      "get": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Get Catalog Item",
+        "operationId": "get_catalog_item_catalog__product_id__get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shopping/options": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Shopping Options",
+        "operationId": "shopping_options_shopping_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shopping/agent": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Shopping Agent Propose",
+        "description": "Invoke the 2-tool Shopping Agent (search_products + propose_purchase ONLY; zero PayPal tools).",
+        "operationId": "shopping_agent_propose_shopping_agent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShoppingAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingAgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shopping/pick": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Shopping Pick",
+        "operationId": "shopping_pick_shopping_pick_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickOptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/{product_id}/price": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Admin Bump Price",
+        "operationId": "admin_bump_price_admin_catalog__product_id__price_post",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BumpPriceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/{product_id}/stock": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Admin Toggle Stock",
+        "operationId": "admin_toggle_stock_admin_catalog__product_id__stock_post",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ledger": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "summary": "List Ledger",
+        "description": "AG Grid Server-Side Row Model compatible ledger query endpoint.",
+        "operationId": "list_ledger_ledger_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "mandate_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "startRow",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startrow"
+            }
+          },
+          {
+            "name": "endRow",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Endrow"
+            }
+          },
+          {
+            "name": "sortDir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "desc",
+              "title": "Sortdir"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ledger/verify": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "summary": "Verify Ledger",
+        "operationId": "verify_ledger_ledger_verify_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerVerificationResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ledger/trust-score": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "summary": "Agent Trust Score",
+        "operationId": "agent_trust_score_ledger_trust_score_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTrustScore"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/paypal": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Paypal Webhook",
+        "operationId": "paypal_webhook_webhooks_paypal_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo-lab/reset": {
+      "post": {
+        "tags": [
+          "Demo Lab (Red Team R1-R9)"
+        ],
+        "summary": "Reset Demo Lab",
+        "operationId": "reset_demo_lab_demo_lab_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Reset Demo Lab Demo Lab Reset Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo-lab/tamper-ledger/{seq}": {
+      "post": {
+        "tags": [
+          "Demo Lab (Red Team R1-R9)"
+        ],
+        "summary": "Tamper Ledger Row",
+        "description": "Hostile DB tamper simulation for R9 live verification demo.",
+        "operationId": "tamper_ledger_row_demo_lab_tamper_ledger__seq__post",
+        "parameters": [
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Seq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Tamper Ledger Row Demo Lab Tamper Ledger  Seq  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/demo-lab/run/{scenario}": {
+      "post": {
+        "tags": [
+          "Demo Lab (Red Team R1-R9)"
+        ],
+        "summary": "Run Red Team Scenario",
+        "description": "Deterministic red-team scenarios R1..R9 for live demo & automated verification.",
+        "operationId": "run_red_team_scenario_demo_lab_run__scenario__post",
+        "parameters": [
+          {
+            "name": "scenario",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Red Team Scenario Demo Lab Run  Scenario  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/packs/email/check": {
+      "post": {
+        "tags": [
+          "Domain-Agnostic Policy Packs"
+        ],
+        "summary": "Check Email Agent Proposal",
+        "description": "Section 9 Demo Beat: Reuses the exact same Mandate Core Rule Engine + Ledger\nfor an autonomous email-sending agent (max_recipients + allowlist_domain).",
+        "operationId": "check_email_agent_proposal_packs_email_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailPolicyCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPolicyCheckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentTrustScore": {
+        "properties": {
+          "trust_score_percent": {
+            "type": "number",
+            "title": "Trust Score Percent"
+          },
+          "total_cases": {
+            "type": "integer",
+            "title": "Total Cases"
+          },
+          "clean_verified_cases": {
+            "type": "integer",
+            "title": "Clean Verified Cases"
+          },
+          "blocked_or_flagged_cases": {
+            "type": "integer",
+            "title": "Blocked Or Flagged Cases"
+          },
+          "avg_time_to_verify_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Time To Verify Seconds"
+          },
+          "total_ledger_entries": {
+            "type": "integer",
+            "title": "Total Ledger Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trust_score_percent",
+          "total_cases",
+          "clean_verified_cases",
+          "blocked_or_flagged_cases",
+          "avg_time_to_verify_seconds",
+          "total_ledger_entries"
+        ],
+        "title": "AgentTrustScore"
+      },
+      "AmendMandateRequest": {
+        "properties": {
+          "max_total_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Total Amount"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "max_spend_per_day_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Spend Per Day Amount"
+          },
+          "max_spend_per_week_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Spend Per Week Amount"
+          },
+          "max_transactions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Transactions"
+          },
+          "require_verified_seller": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Verified Seller"
+          },
+          "allowed_sellers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Sellers"
+          },
+          "blocked_sellers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Sellers"
+          },
+          "allowed_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Categories"
+          },
+          "blocked_keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Keywords"
+          },
+          "deliver_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliver By"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "title": "AmendMandateRequest"
+      },
+      "AuthorizeRequest": {
+        "properties": {
+          "existing_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existing Order Id"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "title": "AuthorizeRequest"
+      },
+      "BumpPriceRequest": {
+        "properties": {
+          "new_amount": {
+            "type": "string",
+            "title": "New Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_amount"
+        ],
+        "title": "BumpPriceRequest"
+      },
+      "CancelRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "Cancelled by user"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "title": "CancelRequest"
+      },
+      "Case": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "mandate_version": {
+            "type": "integer",
+            "title": "Mandate Version",
+            "default": 1
+          },
+          "state": {
+            "$ref": "#/components/schemas/CaseState",
+            "default": "PROPOSED"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/Proposal"
+          },
+          "approved_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Snapshot Id"
+          },
+          "latest_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Snapshot Id"
+          },
+          "paypal_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Order Id"
+          },
+          "paypal_authorization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Authorization Id"
+          },
+          "paypal_capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Capture Id"
+          },
+          "hold_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Expires At"
+          },
+          "last_findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Last Findings"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "proposal"
+        ],
+        "title": "Case"
+      },
+      "CaseListResponse": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/Case"
+            },
+            "type": "array",
+            "title": "Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cases"
+        ],
+        "title": "CaseListResponse"
+      },
+      "CaseResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case"
+        ],
+        "title": "CaseResponse"
+      },
+      "CaseSnapshot": {
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "checkpoint": {
+            "type": "string",
+            "title": "Checkpoint"
+          },
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "mandate_version": {
+            "type": "integer",
+            "title": "Mandate Version"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "total_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "seller_id": {
+            "type": "string",
+            "title": "Seller Id"
+          },
+          "seller_name": {
+            "type": "string",
+            "title": "Seller Name"
+          },
+          "seller_verified": {
+            "type": "boolean",
+            "title": "Seller Verified"
+          },
+          "payee_id": {
+            "type": "string",
+            "title": "Payee Id"
+          },
+          "in_stock": {
+            "type": "boolean",
+            "title": "In Stock"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "estimated_delivery_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Delivery At"
+          },
+          "paypal_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Order Id"
+          },
+          "paypal_authorization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Authorization Id"
+          },
+          "paypal_capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Capture Id"
+          },
+          "sources_used": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources Used"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "checkpoint",
+          "mandate_id",
+          "mandate_version",
+          "product_id",
+          "title",
+          "quantity",
+          "unit_price",
+          "total_amount",
+          "seller_id",
+          "seller_name",
+          "seller_verified",
+          "payee_id",
+          "in_stock",
+          "category"
+        ],
+        "title": "CaseSnapshot"
+      },
+      "CaseState": {
+        "type": "string",
+        "enum": [
+          "PROPOSED",
+          "CART_LOCKED",
+          "CHECKED",
+          "AWAITING_APPROVAL",
+          "APPROVED",
+          "AUTHORIZED",
+          "CAPTURED",
+          "VERIFIED",
+          "HELD",
+          "CANCELLED",
+          "BLOCKED",
+          "NEEDS_RECONFIRM",
+          "EXPIRED",
+          "FLAGGED"
+        ],
+        "title": "CaseState"
+      },
+      "CatalogSearchResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products"
+        ],
+        "title": "CatalogSearchResponse"
+      },
+      "CommandRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user_command",
+              "ui_button",
+              "product_text",
+              "agent_output"
+            ],
+            "title": "Source",
+            "default": "user_command"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "mandate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandate Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "CommandRequest"
+      },
+      "CompileMandateRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Prompt"
+          },
+          "owner_id": {
+            "type": "string",
+            "title": "Owner Id",
+            "default": "user-1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "CompileMandateRequest"
+      },
+      "Decision": {
+        "properties": {
+          "allow": {
+            "type": "boolean",
+            "title": "Allow"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ALLOW",
+              "WARN",
+              "BLOCK"
+            ],
+            "title": "Verdict"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "plain_english_summary": {
+            "type": "string",
+            "title": "Plain English Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allow",
+          "verdict",
+          "plain_english_summary"
+        ],
+        "title": "Decision"
+      },
+      "EmailPolicyCheckRequest": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "recipients": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Recipients"
+          },
+          "body_preview": {
+            "type": "string",
+            "title": "Body Preview",
+            "default": ""
+          },
+          "max_recipients": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Recipients",
+            "default": 3
+          },
+          "allowed_recipient_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Recipient Domains"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject",
+          "recipients"
+        ],
+        "title": "EmailPolicyCheckRequest"
+      },
+      "EmailPolicyCheckResponse": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "ledger_seq": {
+            "type": "integer",
+            "title": "Ledger Seq"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domain",
+          "decision",
+          "ledger_seq"
+        ],
+        "title": "EmailPolicyCheckResponse"
+      },
+      "Finding": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "source",
+          "message",
+          "explanation"
+        ],
+        "title": "Finding"
+      },
+      "FindingSeverity": {
+        "type": "string",
+        "enum": [
+          "info",
+          "warn",
+          "block"
+        ],
+        "title": "FindingSeverity"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service"
+        ],
+        "title": "HealthResponse"
+      },
+      "HoldRequest": {
+        "properties": {
+          "duration_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 10.0,
+            "title": "Duration Seconds",
+            "default": 900
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "title": "HoldRequest"
+      },
+      "LedgerEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "mandate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandate Id"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "prev_hash": {
+            "type": "string",
+            "title": "Prev Hash"
+          },
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "actor",
+          "event_type",
+          "prev_hash",
+          "hash"
+        ],
+        "title": "LedgerEntry"
+      },
+      "LedgerListResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntry"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "lastRow": {
+            "type": "integer",
+            "title": "Lastrow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "total_count",
+          "lastRow"
+        ],
+        "title": "LedgerListResponse"
+      },
+      "LedgerVerificationResult": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          },
+          "verified_entries": {
+            "type": "integer",
+            "title": "Verified Entries"
+          },
+          "genesis_hash": {
+            "type": "string",
+            "title": "Genesis Hash"
+          },
+          "latest_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Hash"
+          },
+          "first_broken_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Broken Seq"
+          },
+          "first_broken_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Broken Id"
+          },
+          "broken_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broken Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid",
+          "total_entries",
+          "verified_entries",
+          "genesis_hash",
+          "latest_hash",
+          "first_broken_seq",
+          "first_broken_id",
+          "broken_reason"
+        ],
+        "title": "LedgerVerificationResult"
+      },
+      "Mandate": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "owner_id": {
+            "type": "string",
+            "title": "Owner Id",
+            "default": "user-1"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "default": "shopping"
+          },
+          "intent_text": {
+            "type": "string",
+            "title": "Intent Text"
+          },
+          "max_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "max_spend_per_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_spend_per_week": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_transactions": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Transactions",
+            "default": 5
+          },
+          "spent_total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spent_today": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spent_this_week": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tx_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tx Count",
+            "default": 0
+          },
+          "allowed_sellers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Sellers"
+          },
+          "blocked_sellers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Sellers"
+          },
+          "require_verified_seller": {
+            "type": "boolean",
+            "title": "Require Verified Seller",
+            "default": true
+          },
+          "allowed_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Categories"
+          },
+          "blocked_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Keywords"
+          },
+          "deliver_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliver By"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "allowed_recipient_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Recipient Domains"
+          },
+          "max_recipients": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Recipients"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MandateStatus",
+            "default": "DRAFT"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent_text",
+          "max_total",
+          "expires_at"
+        ],
+        "title": "Mandate"
+      },
+      "MandateDraftResponse": {
+        "properties": {
+          "mandate": {
+            "$ref": "#/components/schemas/Mandate"
+          },
+          "needs_confirm": {
+            "type": "boolean",
+            "title": "Needs Confirm",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate"
+        ],
+        "title": "MandateDraftResponse"
+      },
+      "MandateListResponse": {
+        "properties": {
+          "mandates": {
+            "items": {
+              "$ref": "#/components/schemas/Mandate"
+            },
+            "type": "array",
+            "title": "Mandates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandates"
+        ],
+        "title": "MandateListResponse"
+      },
+      "MandateResponse": {
+        "properties": {
+          "mandate": {
+            "$ref": "#/components/schemas/Mandate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate"
+        ],
+        "title": "MandateResponse"
+      },
+      "MandateStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "REVOKED",
+          "EXPIRED"
+        ],
+        "title": "MandateStatus"
+      },
+      "Money": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "default": "USD"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "Money",
+        "description": "Exact monetary amount + ISO-4217 currency. Never uses floating point."
+      },
+      "PickOptionRequest": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity",
+            "default": 1
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "product_id"
+        ],
+        "title": "PickOptionRequest"
+      },
+      "Product": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "seller_id": {
+            "type": "string",
+            "title": "Seller Id"
+          },
+          "seller_name": {
+            "type": "string",
+            "title": "Seller Name"
+          },
+          "seller_verified": {
+            "type": "boolean",
+            "title": "Seller Verified"
+          },
+          "payee_id": {
+            "type": "string",
+            "title": "Payee Id"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "general"
+          },
+          "in_stock": {
+            "type": "boolean",
+            "title": "In Stock",
+            "default": true
+          },
+          "estimated_delivery_days": {
+            "type": "integer",
+            "title": "Estimated Delivery Days",
+            "default": 2
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "title",
+          "price",
+          "seller_id",
+          "seller_name",
+          "seller_verified",
+          "payee_id"
+        ],
+        "title": "Product"
+      },
+      "ProductResponse": {
+        "properties": {
+          "product": {
+            "$ref": "#/components/schemas/Product"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product"
+        ],
+        "title": "ProductResponse"
+      },
+      "Proposal": {
+        "properties": {
+          "proposal_id": {
+            "type": "string",
+            "title": "Proposal Id"
+          },
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id",
+            "default": "shopping-agent"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Quantity",
+            "default": 1
+          },
+          "claimed_unit_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "claimed_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "claimed_seller_id": {
+            "type": "string",
+            "title": "Claimed Seller Id"
+          },
+          "claimed_payee_id": {
+            "type": "string",
+            "title": "Claimed Payee Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "estimated_delivery_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Delivery At"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "default": ""
+          },
+          "raw_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Raw Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "product_id",
+          "title",
+          "claimed_unit_price",
+          "claimed_total",
+          "claimed_seller_id",
+          "claimed_payee_id"
+        ],
+        "title": "Proposal"
+      },
+      "ProposeCaseRequest": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "default": 1
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "default": ""
+          },
+          "lock_immediately": {
+            "type": "boolean",
+            "title": "Lock Immediately",
+            "default": false
+          },
+          "override_unit_price_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Unit Price Amount"
+          },
+          "override_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Currency"
+          },
+          "override_seller_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Seller Id"
+          },
+          "override_payee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Payee Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "product_id"
+        ],
+        "title": "ProposeCaseRequest"
+      },
+      "RankedOptionResponse": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "product": {
+            "$ref": "#/components/schemas/Product"
+          },
+          "deterministic_score": {
+            "type": "number",
+            "title": "Deterministic Score"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "sanitized_description": {
+            "type": "string",
+            "title": "Sanitized Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "product",
+          "deterministic_score",
+          "reason",
+          "sanitized_description"
+        ],
+        "title": "RankedOptionResponse"
+      },
+      "ReadyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "paypal_mode": {
+            "type": "string",
+            "title": "Paypal Mode"
+          },
+          "catalog_provider": {
+            "type": "string",
+            "title": "Catalog Provider"
+          },
+          "llm_provider": {
+            "type": "string",
+            "title": "Llm Provider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "paypal_mode",
+          "catalog_provider",
+          "llm_provider"
+        ],
+        "title": "ReadyResponse"
+      },
+      "RevokeAllResponse": {
+        "properties": {
+          "revoked_mandates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revoked Mandates"
+          },
+          "cancelled_cases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cancelled Cases"
+          },
+          "voided_authorizations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Voided Authorizations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revoked_mandates",
+          "cancelled_cases",
+          "voided_authorizations"
+        ],
+        "title": "RevokeAllResponse"
+      },
+      "RevokeRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "Kill switch triggered by user"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "title": "RevokeRequest"
+      },
+      "SearchOptionsRequest": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "query"
+        ],
+        "title": "SearchOptionsRequest"
+      },
+      "ShoppingAgentRequest": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "query"
+        ],
+        "title": "ShoppingAgentRequest"
+      },
+      "ShoppingAgentResponse": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "tools_exposed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tools Exposed"
+          },
+          "tool_trace": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tool Trace"
+          },
+          "case": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Case"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "tools_exposed",
+          "tool_trace"
+        ],
+        "title": "ShoppingAgentResponse"
+      },
+      "ShoppingOptionsResponse": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/RankedOptionResponse"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id",
+          "options"
+        ],
+        "title": "ShoppingOptionsResponse"
+      },
+      "SnapshotDiffResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Diff"
+          },
+          "snapshots_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshots Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id"
+        ],
+        "title": "SnapshotDiffResponse"
+      },
+      "SnapshotListResponse": {
+        "properties": {
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/CaseSnapshot"
+            },
+            "type": "array",
+            "title": "Snapshots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snapshots"
+        ],
+        "title": "SnapshotListResponse"
+      },
+      "StockToggleRequest": {
+        "properties": {
+          "in_stock": {
+            "type": "boolean",
+            "title": "In Stock"
+          }
+        },
+        "type": "object",
+        "required": [
+          "in_stock"
+        ],
+        "title": "StockToggleRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WebhookResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted",
+          "duplicate",
+          "event_id"
+        ],
+        "title": "WebhookResponse"
+      },
+      "WhyResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "plain_english_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Plain English Reasons"
+          },
+          "blocking_findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Blocking Findings"
+          },
+          "warning_findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Warning Findings"
+          },
+          "passed_checks": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Passed Checks"
+          },
+          "snapshot_diff": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Snapshot Diff"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "state",
+          "plain_english_reasons",
+          "blocking_findings",
+          "warning_findings",
+          "passed_checks",
+          "snapshot_diff"
+        ],
+        "title": "WhyResponse"
+      }
+    }
+  }
+}

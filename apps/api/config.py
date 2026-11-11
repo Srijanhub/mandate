@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     api_admin_token: str = "dev-admin-token-change-me"
     api_user_token: str = "dev-user-token-change-me"
+    require_auth: bool = False
 
     paypal_mode: str = "mock"  # mock | sandbox | live
     paypal_client_id: str = ""

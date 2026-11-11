@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from apps.api.dependencies import AppContainer, get_container
+from apps.api.schemas import WebhookResponse
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 
-@router.post("/paypal")
+@router.post("/paypal", response_model=WebhookResponse)
 async def paypal_webhook(
     request: Request,
     container: AppContainer = Depends(get_container),
-) -> dict[str, Any]:
+) -> WebhookResponse:
     headers = {k.lower(): v for k, v in request.headers.items()}
     payload = await request.json()
 
@@ -32,9 +31,10 @@ async def paypal_webhook(
         supp = resource.get("supplementary_data") or {}
         case_id = supp.get("related_ids", {}).get("case_id")
 
-    return await container.orchestrator.handle_webhook(
+    res = await container.orchestrator.handle_webhook(
         event_id=event_id,
         event_type=event_type,
         case_id=case_id,
         payload=payload,
     )
+    return WebhookResponse(**res)

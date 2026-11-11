@@ -47,11 +47,17 @@ def openapi_to_postman(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    out_path = Path(__file__).resolve().parents[1] / "docs" / "mandate-postman-collection.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    collection = openapi_to_postman(app.openapi())
-    out_path.write_text(json.dumps(collection, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote {len(collection['item'])} endpoints to {out_path}")
+    docs_dir = Path(__file__).resolve().parents[1] / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    schema = app.openapi()
+
+    openapi_path = docs_dir / "openapi.json"
+    openapi_path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+
+    postman_path = docs_dir / "mandate-postman-collection.json"
+    collection = openapi_to_postman(schema)
+    postman_path.write_text(json.dumps(collection, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote OpenAPI schema ({openapi_path}) and {len(collection['item'])} Postman endpoints ({postman_path})")
 
 
 if __name__ == "__main__":

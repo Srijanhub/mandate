@@ -394,3 +394,99 @@ SHOPPING_AGENT_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+
+async def run_shopping_agent(
+    *,
+    mandate: Mandate,
+    query: str,
+    catalog: Catalog,
+    orchestrator: Any,
+    llm: LLM | None = None,
+) -> dict[str, Any]:
+    """
+    Execute the 2-tool Shopping Agent (search_products + propose_purchase ONLY).
+    Product descriptions are sanitized and treated strictly as untrusted data.
+    Never accesses PayPal tools.
+    """
+    proposed_cases: list[dict[str, Any]] = []
+    tool_trace: list[dict[str, Any]] = []
+
+    async def _search_products(search_query: str, limit: int = 10) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 10))
+        options = await search_and_ask_preference(
+            mandate=mandate,
+            query=search_query,
+            catalog=catalog,
+            llm=None,
+            limit=safe_limit,
+        )
+        results = [
+            {
+                "product_id": o.product.product_id,
+                "title": o.product.title,
+                "price": o.product.price.to_str(),
+                "seller_name": o.product.seller_name,
+                "seller_verified": o.product.seller_verified,
+                "category": o.product.category,
+                "untrusted_description": o.sanitized_description[:240],
+                "score": o.deterministic_score,
+            }
+            for o in options
+        ]
+        tool_trace.append({"tool": "search_products", "query": search_query, "count": len(results)})
+        return results
+
+    async def _propose_purchase(
+        product_id: str, quantity: int = 1, rationale: str = ""
+    ) -> dict[str, Any]:
+        product = await catalog.get(product_id)
+        if product is None:
+            return {"error": f"Unknown product_id {product_id!r}"}
+        qty = max(1, int(quantity))
+        prop = build_proposal_from_product(
+            mandate=mandate,
+            product=product,
+            quantity=qty,
+            rationale=rationale or f"Agent proposed {product.title}",
+        )
+        case = await orchestrator.submit_proposal(prop, actor="shopping-agent")
+        summary = {"case_id": case.case_id, "state": case.state.value, "product_id": product_id}
+        proposed_cases.append(summary)
+        tool_trace.append({"tool": "propose_purchase", **summary})
+        return summary
+
+    runner = getattr(llm, "run_shopping_tools", None) if llm is not None else None
+    if callable(runner):
+        try:
+            await runner(
+                query=query,
+                mandate=mandate,
+                search_fn=_search_products,
+                propose_fn=_propose_purchase,
+            )
+        except Exception:
+            pass
+
+    if not proposed_cases:
+        # Deterministic 2-tool execution fallback
+        candidates = await _search_products(query, 5)
+        if candidates:
+            top = candidates[0]
+            await _propose_purchase(
+                top["product_id"],
+                1,
+                f"Top policy-compliant option matching '{query}' ({top['price']}).",
+            )
+
+    case_obj = (
+        await orchestrator.store.get_case(proposed_cases[0]["case_id"])
+        if proposed_cases
+        else None
+    )
+    return {
+        "mandate_id": mandate.mandate_id,
+        "tools_exposed": [t["name"] for t in SHOPPING_AGENT_TOOLS],
+        "tool_trace": tool_trace,
+        "case": case_obj.model_dump(mode="json") if case_obj else None,
+    }
+

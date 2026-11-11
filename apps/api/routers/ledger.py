@@ -3,10 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from mandate_core.ledger import compute_agent_trust_score
 
+from adapters.partner_elastic import serialize_ledger_docs
 from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     AgentTrustScore,
+    ElasticSearchResponse,
     LedgerListResponse,
     LedgerVerificationResult,
 )
@@ -42,6 +44,24 @@ async def list_ledger(
         sort_dir="asc" if sortDir.lower() == "asc" else "desc",
     )
     return LedgerListResponse(rows=entries, total_count=total, lastRow=total)
+
+
+@router.get("/search", response_model=ElasticSearchResponse)
+async def search_ledger(
+    query: str = "",
+    limit: int = 20,
+    container: AppContainer = Depends(get_container),
+) -> ElasticSearchResponse:
+    """Elastic search over audit ledger entries (with deterministic fallback)."""
+    entries = await container.store.iter_all_ledger()
+    res = await container.elastic.search(
+        "ledger",
+        query=query,
+        fields=["event_type^3", "case_id^2", "mandate_id^2", "actor", "payload_json"],
+        limit=max(1, min(limit, 100)),
+        fallback_docs=serialize_ledger_docs(entries),
+    )
+    return ElasticSearchResponse.model_validate(res)
 
 
 @router.get("/verify", response_model=LedgerVerificationResult)

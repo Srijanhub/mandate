@@ -206,6 +206,28 @@
       }
     },
     {
+      "name": "Mandates Schedule",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/schedule",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "schedule"
+          ]
+        }
+      }
+    },
+    {
       "name": "Get Mandate",
       "request": {
         "method": "GET",
@@ -518,6 +540,28 @@
       }
     },
     {
+      "name": "Cases Timeline",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/timeline",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "timeline"
+          ]
+        }
+      }
+    },
+    {
       "name": "Get Case",
       "request": {
         "method": "GET",
@@ -627,6 +671,54 @@
             "catalog",
             "search"
           ]
+        }
+      }
+    },
+    {
+      "name": "Semantic Search Catalog",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/semantic-search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "semantic-search"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Verify Catalog Url",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/verify-url",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "verify-url"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
         }
       }
     },
@@ -808,6 +900,28 @@
       }
     },
     {
+      "name": "Search Ledger",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger/search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger",
+            "search"
+          ]
+        }
+      }
+    },
+    {
       "name": "Verify Ledger",
       "request": {
         "method": "GET",
@@ -869,6 +983,135 @@
           "path": [
             "webhooks",
             "paypal"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Integrations Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sync To Elastic",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/elastic/sync",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "elastic",
+            "sync"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Trigger Render Workflow",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/render/workflows/trigger",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "render",
+            "workflows",
+            "trigger"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Get Render Workflow Run",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/render/workflows/runs/{run_id}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "render",
+            "workflows",
+            "runs",
+            "{run_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Test Zapier Notifier",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/zapier/test",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "zapier",
+            "test"
           ]
         },
         "body": {

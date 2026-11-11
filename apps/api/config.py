@@ -25,14 +25,29 @@ class Settings(BaseSettings):
     paypal_sandbox_seller_a_id: str = "SELLER-A-VERIFIED"
     paypal_sandbox_seller_b_id: str = "SELLER-B-ATTACKER"
 
-    llm_provider: str = "gemini"  # gemini | groq | deterministic
+    llm_provider: str = "gemini"  # gemini | groq | astropods | deterministic
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
+    astro_gateway_url: str = ""
+    astro_gateway_api_key: str = ""
+    astro_model: str = "gemini-3.8-flash"
+
     catalog_provider: str = "mock"  # mock | channel3
     channel3_api_key: str = ""
+
+    kernel_api_key: str = ""
+    kernel_base_url: str = "https://api.onkernel.com"
+
+    elastic_url: str = ""
+    elastic_api_key: str = ""
+    elastic_index_prefix: str = "mandate"
+
+    render_api_key: str = ""
+    render_api_base: str = "https://api.render.com/v1"
+    render_workflow_task_slug: str = ""
 
     notifier_provider: str = "console"  # console | webhook
     zapier_webhook_url: str = ""

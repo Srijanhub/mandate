@@ -17,9 +17,13 @@ from mandate_core.workflows import (
 
 from adapters.catalog_channel3 import Channel3Catalog
 from adapters.catalog_mock import MockCatalog
+from adapters.llm_astropods import AstropodsLLM
 from adapters.llm_gemini import GeminiLLM
 from adapters.llm_groq import GroqLLM
 from adapters.notifier_console import ConsoleNotifier, WebhookNotifier
+from adapters.partner_elastic import ElasticSearchAdapter
+from adapters.partner_kernel import KernelVerifier
+from adapters.partner_render import RenderWorkflowsClient
 from adapters.paypal import MockPayPalProvider, PayPalPaymentProvider
 from adapters.persistence import SqlAlchemyStateStore, create_engine_and_sessionmaker
 from apps.api.config import Settings
@@ -35,6 +39,9 @@ class AppContainer:
     notifier: Notifier
     orchestrator: Orchestrator
     commands: CommandRegistry
+    kernel: KernelVerifier
+    elastic: ElasticSearchAdapter
+    render_workflows: RenderWorkflowsClient
     last_options: list[RankedOption] = field(default_factory=list)
 
 
@@ -45,6 +52,9 @@ def build_container(
     payment: PaymentProvider | None = None,
     llm: LLM | None = None,
     notifier: Notifier | None = None,
+    kernel: KernelVerifier | None = None,
+    elastic: ElasticSearchAdapter | None = None,
+    render_workflows: RenderWorkflowsClient | None = None,
 ) -> AppContainer:
     engine, session_factory = create_engine_and_sessionmaker(settings.database_url)
     store = SqlAlchemyStateStore(engine, session_factory)
@@ -76,11 +86,36 @@ def build_container(
             resolved_llm = GeminiLLM(api_key=settings.gemini_api_key, model=settings.gemini_model)
         elif settings.llm_provider == "groq" and settings.groq_api_key:
             resolved_llm = GroqLLM(api_key=settings.groq_api_key, model=settings.groq_model)
+        elif (
+            settings.llm_provider == "astropods"
+            and settings.astro_gateway_url
+            and settings.astro_gateway_api_key
+        ):
+            resolved_llm = AstropodsLLM(
+                gateway_url=settings.astro_gateway_url,
+                api_key=settings.astro_gateway_api_key,
+                model=settings.astro_model,
+            )
 
     resolved_notifier: Notifier = notifier or (
         WebhookNotifier(settings.zapier_webhook_url)
         if settings.notifier_provider == "webhook" and settings.zapier_webhook_url
         else ConsoleNotifier()
+    )
+
+    resolved_kernel = kernel or KernelVerifier(
+        api_key=settings.kernel_api_key,
+        base_url=settings.kernel_base_url,
+    )
+    resolved_elastic = elastic or ElasticSearchAdapter(
+        url=settings.elastic_url,
+        api_key=settings.elastic_api_key,
+        index_prefix=settings.elastic_index_prefix,
+    )
+    resolved_render = render_workflows or RenderWorkflowsClient(
+        api_key=settings.render_api_key,
+        api_base=settings.render_api_base,
+        default_task_slug=settings.render_workflow_task_slug,
     )
 
     orchestrator = Orchestrator(
@@ -100,6 +135,9 @@ def build_container(
         notifier=resolved_notifier,
         orchestrator=orchestrator,
         commands=None,  # type: ignore[arg-type]
+        kernel=resolved_kernel,
+        elastic=resolved_elastic,
+        render_workflows=resolved_render,
     )
 
     async def _compile_and_draft(text: str, actor: str) -> dict[str, Any]:

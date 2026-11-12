@@ -1,0 +1,8 @@
+# AI Tools Log — `@mandate/agent` (Role H: Harshit)
+
+This log documents all AI tools used while building `@mandate/agent` (`H1`–`H4`, `S4`), example prompts, and what humans verified or rewrote.
+
+| Tool & Version / Model | Purpose | Example Prompt Used | Human / Automated Verification |
+| --- | --- | --- | --- |
+| **Antigravity (Gemini)** | Pair-programming `packages/agent` (`llm.ts`, `spike.ts`, `contracts.ts`, `tools.ts`, `agent.ts`, `demoPages.ts`, `attackSuite.ts`, `receipt.ts`, `demoHarness.ts`, and Vitest suites) | *"Build a typed TypeScript Gemini Interactions wrapper locked to `gemini-3.8-flash`, with Zod validation, AbortController timeouts, bounded retries on 429/503, and unit tests."* | Verified all npm package versions and licenses (`zod@4.6.7`, `vitest@5.1.0`, `tsx@4.23.15`, `typescript@7.0.2`), aligned endpoint with `adapters/llm_gemini/adapter.py` (`/v1beta/interactions`), fixed `tools.test.ts` truncation test, caught & fixed LLM minor-unit formatting bug in `receipt.ts`, verified `tsc --noEmit` and `vitest run`. |
+| **Google Gemini API (`gemini-3.8-flash`, Interactions API)** | Runtime LLM for the shopping agent tool-calling loop (`H2`/`H3`) and optional intent-receipt narrative (`H4`) | *"You MUST reply with ONLY a JSON object matching `browse_page`, `propose_order`, or `abort`. Money `unitPriceMinor` MUST be integer cents."* | Locked solely to `gemini-3.8-flash` via `/v1beta/interactions` so the entire Mandate monorepo uses the same model. Every model output is parsed through Zod (`AgentActionSchema`, `SpikeProposalSchema`, `OrderProposalSchema`); receipt facts (`totalMinor`, `decision`, `mandateHash`) are generated strictly in code. |

@@ -7,6 +7,7 @@ from .models import (
     SnapshotRow,
     WebhookEventRow,
 )
+from .seed import seed_demo_data
 from .store import SqlAlchemyStateStore, create_engine_and_sessionmaker, normalize_database_url
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "WebhookEventRow",
     "create_engine_and_sessionmaker",
     "normalize_database_url",
+    "seed_demo_data",
 ]

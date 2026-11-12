@@ -16,6 +16,11 @@ class Base(DeclarativeBase):
 
 class MandateRow(Base):
     __tablename__ = "mandates"
+    __table_args__ = (
+        Index("idx_mandates_updated_at", "updated_at"),
+        Index("idx_mandates_owner_updated", "owner_id", "updated_at"),
+        Index("idx_mandates_status_updated", "status", "updated_at"),
+    )
 
     mandate_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -29,6 +34,11 @@ class MandateRow(Base):
 
 class CaseRow(Base):
     __tablename__ = "cases"
+    __table_args__ = (
+        Index("idx_cases_updated_at", "updated_at"),
+        Index("idx_cases_mandate_updated", "mandate_id", "updated_at"),
+        Index("idx_cases_state_updated", "state", "updated_at"),
+    )
 
     case_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     mandate_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -40,16 +50,25 @@ class CaseRow(Base):
 
 class SnapshotRow(Base):
     __tablename__ = "case_snapshots"
+    __table_args__ = (
+        Index("idx_snapshots_case_created", "case_id", "created_at"),
+        Index("idx_snapshots_case_checkpoint", "case_id", "checkpoint"),
+    )
 
     snapshot_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     case_id: Mapped[str] = mapped_column(String(64), index=True)
-    checkpoint: Mapped[str] = mapped_column(String(64))
+    checkpoint: Mapped[str] = mapped_column(String(64), index=True)
     data_json: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class LedgerEntryRow(Base):
     __tablename__ = "ledger_entries"
+    __table_args__ = (
+        Index("idx_ledger_case_seq", "case_id", "seq"),
+        Index("idx_ledger_mandate_seq", "mandate_id", "seq"),
+        Index("idx_ledger_event_type_seq", "event_type", "seq"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     seq: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
@@ -65,7 +84,10 @@ class LedgerEntryRow(Base):
 
 class RecheckJobRow(Base):
     __tablename__ = "recheck_jobs"
-    __table_args__ = (Index("idx_recheck_due", "status", "run_after"),)
+    __table_args__ = (
+        Index("idx_recheck_due", "status", "run_after"),
+        Index("idx_recheck_case_status", "case_id", "status"),
+    )
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     case_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -79,6 +101,10 @@ class RecheckJobRow(Base):
 
 class WebhookEventRow(Base):
     __tablename__ = "webhook_events"
+    __table_args__ = (
+        Index("idx_webhook_received_at", "received_at"),
+        Index("idx_webhook_event_type", "event_type"),
+    )
 
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     event_type: Mapped[str] = mapped_column(String(128))

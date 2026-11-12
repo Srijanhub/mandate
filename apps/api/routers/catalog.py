@@ -12,11 +12,15 @@ from mandate_core.workflows import (
 from pydantic import BaseModel
 
 from adapters.catalog_mock import MockCatalog
+from adapters.partner_elastic import serialize_catalog_docs
 from apps.api.auth import require_admin_auth, require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     CaseResponse,
     CatalogSearchResponse,
+    ElasticSearchResponse,
+    KernelVerifyUrlRequest,
+    KernelVerifyUrlResponse,
     ProductResponse,
     RankedOptionResponse,
     ShoppingAgentResponse,
@@ -65,6 +69,60 @@ async def search_catalog(
         filters["category"] = category
     products = await container.catalog.search(query, filters=filters, limit=limit)
     return CatalogSearchResponse(products=products)
+
+
+@router.get("/catalog/semantic-search", response_model=ElasticSearchResponse)
+async def semantic_search_catalog(
+    query: str = "",
+    limit: int = 10,
+    container: AppContainer = Depends(get_container),
+) -> ElasticSearchResponse:
+    """Elastic hybrid/fuzzy search over catalog products (with deterministic fallback)."""
+    fallback_docs: list[tuple[str, dict[str, Any]]] | None = None
+    if not container.elastic.is_live:
+        products = await container.catalog.search("", limit=100)
+        fallback_docs = serialize_catalog_docs(products)
+    res = await container.elastic.search(
+        "catalog",
+        query=query,
+        fields=["title^3", "description^2", "category", "seller_name"],
+        limit=max(1, min(limit, 50)),
+        fallback_docs=fallback_docs,
+    )
+    return ElasticSearchResponse.model_validate(res)
+
+
+@router.post(
+    "/catalog/verify-url",
+    response_model=KernelVerifyUrlResponse,
+    dependencies=[Depends(require_user_auth)],
+)
+async def verify_catalog_url(
+    body: KernelVerifyUrlRequest,
+    container: AppContainer = Depends(get_container),
+) -> KernelVerifyUrlResponse:
+    """Verify a live merchant/product URL via Kernel cloud browser (or deterministic fallback)."""
+    target_url = body.url
+    expected_title: str | None = None
+    expected_price: str | None = None
+
+    if body.product_id:
+        item = await container.catalog.get(body.product_id)
+        if item is None:
+            raise NotFoundError(f"Product {body.product_id} not found")
+        expected_title = item.title
+        expected_price = item.price.to_str()
+        target_url = target_url or item.url or f"https://example.com/products/{item.product_id}"
+
+    if not target_url:
+        raise ValidationError("Either 'url' or 'product_id' must be provided")
+
+    result = await container.kernel.verify_merchant_url(
+        target_url,
+        expected_title=expected_title,
+        expected_price=expected_price,
+    )
+    return KernelVerifyUrlResponse(**result, product_id=body.product_id)
 
 
 @router.get("/catalog/{product_id}", response_model=ProductResponse)

@@ -4,10 +4,26 @@
     "description": "Deterministic spending firewall, state machine, snapshot merger, PayPal Orders v2 enforcement, and tamper-evident SHA-256 audit ledger.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiToken}}",
+        "type": "string"
+      }
+    ]
+  },
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8000"
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "apiToken",
+      "value": "dev-user-token-change-me",
+      "type": "string"
     }
   ],
   "item": [
@@ -19,6 +35,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -40,6 +62,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -61,6 +89,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -74,7 +108,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"text\": \"/mandate Buy a scented candle under $45, verified sellers only\",\n  \"source\": \"user_command\",\n  \"actor\": \"user\",\n  \"case_id\": \"case_sample_001\",\n  \"mandate_id\": \"mnd_sample_001\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -86,6 +125,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -100,7 +145,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"prompt\": \"Buy a birthday candle under $45 from a verified seller\",\n  \"owner_id\": \"user-1\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -112,22 +162,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/mandates/{mandate_id}/confirm",
+          "raw": "{{baseUrl}}/mandates/:mandate_id/confirm",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "mandates",
-            "{mandate_id}",
+            ":mandate_id",
             "confirm"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -139,22 +204,39 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/mandates/{mandate_id}/amend",
+          "raw": "{{baseUrl}}/mandates/:mandate_id/amend",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "mandates",
-            "{mandate_id}",
+            ":mandate_id",
             "amend"
+          ],
+          "variable": [
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"max_total_amount\": \"60.00\",\n  \"currency\": \"USD\",\n  \"max_spend_per_day_amount\": \"sample\",\n  \"max_spend_per_week_amount\": \"sample\",\n  \"max_transactions\": 1,\n  \"require_verified_seller\": true,\n  \"allowed_sellers\": [\n    \"sample\"\n  ],\n  \"blocked_sellers\": [\n    \"sample\"\n  ],\n  \"allowed_categories\": [\n    \"sample\"\n  ],\n  \"blocked_keywords\": [\n    \"sample\"\n  ],\n  \"deliver_by\": \"2026-11-12T12:00:00Z\",\n  \"expires_at\": \"2026-11-12T12:00:00Z\",\n  \"actor\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -166,6 +248,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -180,7 +268,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"reason\": \"Kill switch triggered by user\",\n  \"actor\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -192,6 +285,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -201,6 +300,58 @@
           ],
           "path": [
             "mandates"
+          ],
+          "query": [
+            {
+              "key": "owner_id",
+              "value": "user-1",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Mandates Schedule",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/mandates/schedule",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "mandates",
+            "schedule"
+          ],
+          "query": [
+            {
+              "key": "owner_id",
+              "value": "user-1",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "disabled": true
+            }
           ]
         }
       }
@@ -213,16 +364,35 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/mandates/{mandate_id}",
+          "raw": "{{baseUrl}}/mandates/:mandate_id",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "mandates",
-            "{mandate_id}"
+            ":mandate_id"
+          ],
+          "query": [
+            {
+              "key": "version",
+              "value": "1",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001"
+            }
           ]
         }
       }
@@ -235,6 +405,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -249,7 +425,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"mandate_id\": \"mnd_sample_001\",\n  \"product_id\": \"prod-gift-02\",\n  \"quantity\": 1,\n  \"rationale\": \"\",\n  \"lock_immediately\": false,\n  \"override_unit_price_amount\": \"sample\",\n  \"override_currency\": \"sample\",\n  \"override_seller_id\": \"sample\",\n  \"override_payee_id\": \"sample\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -261,22 +442,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/lock",
+          "raw": "{{baseUrl}}/cases/:case_id/lock",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "lock"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -288,22 +484,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/approve",
+          "raw": "{{baseUrl}}/cases/:case_id/approve",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "approve"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -315,22 +526,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/approve-only",
+          "raw": "{{baseUrl}}/cases/:case_id/approve-only",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "approve-only"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -342,22 +568,39 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/authorize-only",
+          "raw": "{{baseUrl}}/cases/:case_id/authorize-only",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "authorize-only"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"existing_order_id\": \"sample\",\n  \"actor\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -369,22 +612,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/capture-only",
+          "raw": "{{baseUrl}}/cases/:case_id/capture-only",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "capture-only"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "orchestrator",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -396,22 +654,39 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/hold",
+          "raw": "{{baseUrl}}/cases/:case_id/hold",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "hold"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"duration_seconds\": 900,\n  \"actor\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -423,22 +698,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/resume",
+          "raw": "{{baseUrl}}/cases/:case_id/resume",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "resume"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -450,22 +740,39 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/cancel",
+          "raw": "{{baseUrl}}/cases/:case_id/cancel",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "cancel"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"reason\": \"Cancelled by user\",\n  \"actor\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -477,22 +784,37 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/recheck",
+          "raw": "{{baseUrl}}/cases/:case_id/recheck",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "recheck"
+          ],
+          "query": [
+            {
+              "key": "actor",
+              "value": "user",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -504,6 +826,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -513,6 +841,63 @@
           ],
           "path": [
             "cases"
+          ],
+          "query": [
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001",
+              "disabled": true
+            },
+            {
+              "key": "state",
+              "value": "PROPOSED",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cases Timeline",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/timeline",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "timeline"
+          ],
+          "query": [
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "disabled": true
+            }
           ]
         }
       }
@@ -525,16 +910,28 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}",
+          "raw": "{{baseUrl}}/cases/:case_id",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}"
+            ":case_id"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         }
       }
@@ -547,17 +944,29 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/why",
+          "raw": "{{baseUrl}}/cases/:case_id/why",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "why"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         }
       }
@@ -570,17 +979,29 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/snapshots",
+          "raw": "{{baseUrl}}/cases/:case_id/snapshots",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "snapshots"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         }
       }
@@ -593,17 +1014,29 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/cases/{case_id}/diff",
+          "raw": "{{baseUrl}}/cases/:case_id/diff",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "cases",
-            "{case_id}",
+            ":case_id",
             "diff"
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
           ]
         }
       }
@@ -616,6 +1049,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -626,7 +1065,106 @@
           "path": [
             "catalog",
             "search"
+          ],
+          "query": [
+            {
+              "key": "query",
+              "value": "",
+              "disabled": true
+            },
+            {
+              "key": "verified_only",
+              "value": "false",
+              "disabled": true
+            },
+            {
+              "key": "category",
+              "value": "sample",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "disabled": true
+            }
           ]
+        }
+      }
+    },
+    {
+      "name": "Semantic Search Catalog",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/semantic-search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "semantic-search"
+          ],
+          "query": [
+            {
+              "key": "query",
+              "value": "",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "10",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Verify Catalog Url",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/catalog/verify-url",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "catalog",
+            "verify-url"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://merchant.example.com/products/candle\",\n  \"product_id\": \"prod-gift-02\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -638,16 +1176,28 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/catalog/{product_id}",
+          "raw": "{{baseUrl}}/catalog/:product_id",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "catalog",
-            "{product_id}"
+            ":product_id"
+          ],
+          "variable": [
+            {
+              "key": "product_id",
+              "value": "prod-gift-02"
+            }
           ]
         }
       }
@@ -660,6 +1210,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -674,7 +1230,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"mandate_id\": \"mnd_sample_001\",\n  \"query\": \"scented candle\",\n  \"limit\": 5\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -686,6 +1247,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -700,7 +1267,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"mandate_id\": \"mnd_sample_001\",\n  \"query\": \"scented candle\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -712,6 +1284,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -726,7 +1304,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"mandate_id\": \"mnd_sample_001\",\n  \"product_id\": \"prod-gift-02\",\n  \"quantity\": 1,\n  \"rationale\": \"\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -738,23 +1321,40 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/admin/catalog/{product_id}/price",
+          "raw": "{{baseUrl}}/admin/catalog/:product_id/price",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "admin",
             "catalog",
-            "{product_id}",
+            ":product_id",
             "price"
+          ],
+          "variable": [
+            {
+              "key": "product_id",
+              "value": "prod-gift-02"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"new_amount\": \"55.00\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -766,23 +1366,40 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/admin/catalog/{product_id}/stock",
+          "raw": "{{baseUrl}}/admin/catalog/:product_id/stock",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "admin",
             "catalog",
-            "{product_id}",
+            ":product_id",
             "stock"
+          ],
+          "variable": [
+            {
+              "key": "product_id",
+              "value": "prod-gift-02"
+            }
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"in_stock\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -794,6 +1411,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -803,6 +1426,88 @@
           ],
           "path": [
             "ledger"
+          ],
+          "query": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001",
+              "disabled": true
+            },
+            {
+              "key": "mandate_id",
+              "value": "mnd_sample_001",
+              "disabled": true
+            },
+            {
+              "key": "event_type",
+              "value": "sample",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "100",
+              "disabled": true
+            },
+            {
+              "key": "offset",
+              "value": "0",
+              "disabled": true
+            },
+            {
+              "key": "startRow",
+              "value": "1",
+              "disabled": true
+            },
+            {
+              "key": "endRow",
+              "value": "1",
+              "disabled": true
+            },
+            {
+              "key": "sortDir",
+              "value": "desc",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Ledger",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger/search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger",
+            "search"
+          ],
+          "query": [
+            {
+              "key": "query",
+              "value": "",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "disabled": true
+            }
           ]
         }
       }
@@ -815,6 +1520,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -837,6 +1548,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -859,6 +1576,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -870,10 +1593,184 @@
             "webhooks",
             "paypal"
           ]
+        }
+      }
+    },
+    {
+      "name": "Integrations Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "status"
+          ],
+          "query": [
+            {
+              "key": "probe",
+              "value": "false",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sync To Elastic",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/elastic/sync",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "elastic",
+            "sync"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Trigger Render Workflow",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/render/workflows/trigger",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "render",
+            "workflows",
+            "trigger"
+          ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"task_slug\": \"mandate-recheck/sweep\",\n  \"input_args\": [\n    \"case_sample_001\"\n  ],\n  \"run_local_recheck\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Get Render Workflow Run",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/render/workflows/runs/:run_id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "render",
+            "workflows",
+            "runs",
+            ":run_id"
+          ],
+          "variable": [
+            {
+              "key": "run_id",
+              "value": "sample"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Test Zapier Notifier",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/integrations/zapier/test",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "integrations",
+            "zapier",
+            "test"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"MANDATE_TEST_NOTIFICATION\",\n  \"case_id\": \"case_sample_001\",\n  \"message\": \"Mandate firewall Zapier webhook connectivity test\",\n  \"details\": {}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     },
@@ -885,6 +1782,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -896,10 +1799,6 @@
             "demo-lab",
             "reset"
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -911,22 +1810,30 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/demo-lab/tamper-ledger/{seq}",
+          "raw": "{{baseUrl}}/demo-lab/tamper-ledger/:seq",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "demo-lab",
             "tamper-ledger",
-            "{seq}"
+            ":seq"
+          ],
+          "variable": [
+            {
+              "key": "seq",
+              "value": "1"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -938,22 +1845,30 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/demo-lab/run/{scenario}",
+          "raw": "{{baseUrl}}/demo-lab/run/:scenario",
           "host": [
             "{{baseUrl}}"
           ],
           "path": [
             "demo-lab",
             "run",
-            "{scenario}"
+            ":scenario"
+          ],
+          "variable": [
+            {
+              "key": "scenario",
+              "value": "sample"
+            }
           ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{}"
         }
       }
     },
@@ -965,6 +1880,12 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
           }
         ],
         "url": {
@@ -980,7 +1901,12 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{}"
+          "raw": "{\n  \"subject\": \"Weekly Mandate Digest\",\n  \"recipients\": [\n    \"sample\"\n  ],\n  \"body_preview\": \"\",\n  \"max_recipients\": 3,\n  \"allowed_recipient_domains\": [\n    \"sample\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
         }
       }
     }

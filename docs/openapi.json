@@ -344,6 +344,66 @@
         }
       }
     },
+    "/mandates/schedule": {
+      "get": {
+        "tags": [
+          "Mandates"
+        ],
+        "summary": "Mandates Schedule",
+        "description": "Bryntum Calendar/Scheduler compatible feed of mandate validity and delivery windows.",
+        "operationId": "mandates_schedule_mandates_schedule_get",
+        "parameters": [
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BryntumTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mandates/{mandate_id}": {
       "get": {
         "tags": [
@@ -1007,6 +1067,66 @@
         }
       }
     },
+    "/cases/timeline": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Cases Timeline",
+        "description": "Bryntum Scheduler/Gantt compatible timeline of enforcement cases and hold windows.",
+        "operationId": "cases_timeline_cases_timeline_get",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mandate Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BryntumTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}": {
       "get": {
         "tags": [
@@ -1237,6 +1357,102 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CatalogSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/semantic-search": {
+      "get": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Semantic Search Catalog",
+        "description": "Elastic hybrid/fuzzy search over catalog products (with deterministic fallback).",
+        "operationId": "semantic_search_catalog_catalog_semantic_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElasticSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/verify-url": {
+      "post": {
+        "tags": [
+          "Catalog & Shopping"
+        ],
+        "summary": "Verify Catalog Url",
+        "description": "Verify a live merchant/product URL via Kernel cloud browser (or deterministic fallback).",
+        "operationId": "verify_catalog_url_catalog_verify_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KernelVerifyUrlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KernelVerifyUrlResponse"
                 }
               }
             }
@@ -1668,6 +1884,60 @@
         }
       }
     },
+    "/ledger/search": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "summary": "Search Ledger",
+        "description": "Elastic search over audit ledger entries (with deterministic fallback).",
+        "operationId": "search_ledger_ledger_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElasticSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ledger/verify": {
       "get": {
         "tags": [
@@ -1724,6 +1994,213 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/status": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Integrations Status",
+        "description": "Report configuration status (and optional concurrent live probe) for all partner APIs.",
+        "operationId": "integrations_status_integrations_status_get",
+        "parameters": [
+          {
+            "name": "probe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Probe"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationsStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/elastic/sync": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Sync To Elastic",
+        "description": "Index current catalog items and audit ledger entries into Elastic (or fallback index).",
+        "operationId": "sync_to_elastic_integrations_elastic_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElasticSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/render/workflows/trigger": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Trigger Render Workflow",
+        "description": "Trigger a Render Workflow sweep task (and optionally run local due recheck jobs).",
+        "operationId": "trigger_render_workflow_integrations_render_workflows_trigger_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RenderWorkflowTriggerRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkflowRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/render/workflows/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Get Render Workflow Run",
+        "description": "Inspect a Render Workflow task run status.",
+        "operationId": "get_render_workflow_run_integrations_render_workflows_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkflowRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/zapier/test": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Test Zapier Notifier",
+        "description": "Send a test notification through the active Notifier (Zapier webhook or Console).",
+        "operationId": "test_zapier_notifier_integrations_zapier_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ZapierTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZapierTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2112,6 +2589,117 @@
         },
         "type": "object",
         "title": "AuthorizeRequest"
+      },
+      "BryntumEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "resourceId": {
+            "type": "string",
+            "title": "Resourceid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "startDate": {
+            "type": "string",
+            "title": "Startdate"
+          },
+          "endDate": {
+            "type": "string",
+            "title": "Enddate"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "eventColor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventcolor"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "resourceId",
+          "name",
+          "startDate",
+          "endDate",
+          "status"
+        ],
+        "title": "BryntumEvent"
+      },
+      "BryntumResource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "title": "BryntumResource"
+      },
+      "BryntumTimelineResponse": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "default": "bryntum-scheduler-v1"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/BryntumResource"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/BryntumEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resources",
+          "events"
+        ],
+        "title": "BryntumTimelineResponse"
       },
       "BumpPriceRequest": {
         "properties": {
@@ -2570,6 +3158,89 @@
         ],
         "title": "Decision"
       },
+      "ElasticSearchHit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "source": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "score",
+          "source"
+        ],
+        "title": "ElasticSearchHit"
+      },
+      "ElasticSearchResponse": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/ElasticSearchHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "index",
+          "total",
+          "hits"
+        ],
+        "title": "ElasticSearchResponse"
+      },
+      "ElasticSyncResponse": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "catalog_indexed": {
+            "type": "integer",
+            "title": "Catalog Indexed"
+          },
+          "ledger_indexed": {
+            "type": "integer",
+            "title": "Ledger Indexed"
+          },
+          "errors": {
+            "type": "boolean",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "catalog_indexed",
+          "ledger_indexed",
+          "errors"
+        ],
+        "title": "ElasticSyncResponse"
+      },
       "EmailPolicyCheckRequest": {
         "properties": {
           "subject": {
@@ -2726,6 +3397,185 @@
         },
         "type": "object",
         "title": "HoldRequest"
+      },
+      "IntegrationServiceStatus": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "live_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Ok"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "configured",
+          "mode"
+        ],
+        "title": "IntegrationServiceStatus"
+      },
+      "IntegrationsStatusResponse": {
+        "properties": {
+          "probed": {
+            "type": "boolean",
+            "title": "Probed"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationServiceStatus"
+            },
+            "type": "array",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "probed",
+          "services"
+        ],
+        "title": "IntegrationsStatusResponse"
+      },
+      "KernelVerifyUrlRequest": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          }
+        },
+        "type": "object",
+        "title": "KernelVerifyUrlRequest"
+      },
+      "KernelVerifyUrlResponse": {
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "cdp_ready": {
+            "type": "boolean",
+            "title": "Cdp Ready",
+            "default": false
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "observed_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Title"
+          },
+          "observed_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Price"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verified",
+          "mode",
+          "url",
+          "domain"
+        ],
+        "title": "KernelVerifyUrlResponse"
       },
       "LedgerEntry": {
         "properties": {
@@ -3490,6 +4340,18 @@
           "llm_provider": {
             "type": "string",
             "title": "Llm Provider"
+          },
+          "notifier_provider": {
+            "type": "string",
+            "title": "Notifier Provider",
+            "default": "console"
+          },
+          "integrations_configured": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Integrations Configured"
           }
         },
         "type": "object",
@@ -3500,6 +4362,82 @@
           "llm_provider"
         ],
         "title": "ReadyResponse"
+      },
+      "RenderWorkflowRunResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "task_slug": {
+            "type": "string",
+            "title": "Task Slug"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "input": {
+            "items": {},
+            "type": "array",
+            "title": "Input"
+          },
+          "results": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "task_slug",
+          "status",
+          "mode"
+        ],
+        "title": "RenderWorkflowRunResponse"
+      },
+      "RenderWorkflowTriggerRequest": {
+        "properties": {
+          "task_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Slug"
+          },
+          "input_args": {
+            "items": {},
+            "type": "array",
+            "title": "Input Args"
+          },
+          "run_local_recheck": {
+            "type": "boolean",
+            "title": "Run Local Recheck",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "RenderWorkflowTriggerRequest"
       },
       "RevokeAllResponse": {
         "properties": {
@@ -3851,6 +4789,61 @@
           "snapshot_diff"
         ],
         "title": "WhyResponse"
+      },
+      "ZapierTestRequest": {
+        "properties": {
+          "event": {
+            "type": "string",
+            "title": "Event",
+            "default": "MANDATE_TEST_NOTIFICATION"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Mandate firewall Zapier webhook connectivity test"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "title": "ZapierTestRequest"
+      },
+      "ZapierTestResponse": {
+        "properties": {
+          "delivered": {
+            "type": "boolean",
+            "title": "Delivered"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "event": {
+            "type": "string",
+            "title": "Event"
+          }
+        },
+        "type": "object",
+        "required": [
+          "delivered",
+          "mode",
+          "event"
+        ],
+        "title": "ZapierTestResponse"
       }
     }
   }

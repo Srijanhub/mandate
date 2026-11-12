@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
+    BryntumEvent,
+    BryntumResource,
+    BryntumTimelineResponse,
     MandateDraftResponse,
     MandateListResponse,
     MandateResponse,
@@ -124,6 +127,45 @@ async def list_mandates(
 ) -> MandateListResponse:
     rows = await container.store.list_mandates(owner_id=owner_id, limit=limit)
     return MandateListResponse(mandates=rows)
+
+
+@router.get("/schedule", response_model=BryntumTimelineResponse)
+async def mandates_schedule(
+    owner_id: str | None = None,
+    limit: int = 50,
+    container: AppContainer = Depends(get_container),
+) -> BryntumTimelineResponse:
+    """Bryntum Calendar/Scheduler compatible feed of mandate validity and delivery windows."""
+    rows = await container.store.list_mandates(owner_id=owner_id, limit=max(1, min(limit, 200)))
+    resources: list[BryntumResource] = []
+    events: list[BryntumEvent] = []
+    seen_owners: set[str] = set()
+    for m in rows:
+        if m.owner_id not in seen_owners:
+            seen_owners.add(m.owner_id)
+            resources.append(
+                BryntumResource(id=m.owner_id, name=f"Owner {m.owner_id}", role="owner")
+            )
+        end_dt = m.deliver_by or m.expires_at
+        if end_dt < m.created_at:
+            end_dt = m.created_at
+        events.append(
+            BryntumEvent(
+                id=f"{m.mandate_id}-v{m.version}",
+                resourceId=m.owner_id,
+                name=f"[{m.status.value}] {m.max_total.to_str()} — {m.intent_text[:60]}",
+                startDate=m.created_at.isoformat(),
+                endDate=end_dt.isoformat(),
+                status=m.status.value,
+                eventColor="green" if m.status.value == "ACTIVE" else "slate",
+                meta={
+                    "mandate_id": m.mandate_id,
+                    "version": m.version,
+                    "expires_at": m.expires_at.isoformat(),
+                },
+            )
+        )
+    return BryntumTimelineResponse(resources=resources, events=events)
 
 
 @router.get("/{mandate_id}", response_model=MandateResponse)

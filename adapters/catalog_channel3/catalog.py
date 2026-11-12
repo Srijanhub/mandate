@@ -1,50 +1,72 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from typing import Any
 
 from mandate_core.domain.models import Money, Product
 
 
+def _attr(obj: Any, key: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def _map_channel3_product(raw: Any) -> Product:
     """Translate Channel3 SDK product response into Core Product without leaking SDK schema."""
-    get_attr = (
-        (lambda k, d=None: raw.get(k, d))
-        if isinstance(raw, dict)
-        else (lambda k, d=None: getattr(raw, k, d))
+    product_id = str(_attr(raw, "id", "") or _attr(raw, "product_id", ""))
+    title = str(_attr(raw, "title", "") or _attr(raw, "name", "Untitled Item"))
+    description = str(_attr(raw, "description", "") or "")
+
+    brands = _attr(raw, "brands", None) or []
+    first_brand = brands[0] if brands else None
+    brand = str(
+        _attr(first_brand, "name", "")
+        or _attr(raw, "brand", "")
+        or "Channel3 Merchant"
     )
 
-    product_id = str(get_attr("id", "") or get_attr("product_id", ""))
-    title = str(get_attr("title", "") or get_attr("name", "Untitled Item"))
-    description = str(get_attr("description", "") or "")
-    brand = str(get_attr("brand", "") or "Channel3 Merchant")
-    url = get_attr("url", None)
+    offers = _attr(raw, "offers", None) or []
+    first_offer = offers[0] if offers else None
+    url = _attr(raw, "url", None) or _attr(first_offer, "url", None)
 
-    price_obj = get_attr("price", None)
-    if isinstance(price_obj, dict):
-        raw_amount = price_obj.get("price", price_obj.get("amount", "0.00"))
-        currency = str(price_obj.get("currency", "USD"))
-    elif price_obj is not None:
-        raw_amount = getattr(price_obj, "price", getattr(price_obj, "amount", "0.00"))
-        currency = str(getattr(price_obj, "currency", "USD"))
+    price_obj = _attr(raw, "price", None) or _attr(first_offer, "price", None)
+    if price_obj is not None:
+        raw_amount = _attr(price_obj, "price", None)
+        if raw_amount is None:
+            raw_amount = _attr(price_obj, "amount", "0.00")
+        currency = str(_attr(price_obj, "currency", "USD") or "USD")
     else:
         raw_amount = "0.00"
         currency = "USD"
 
-    offers = get_attr("offers", None) or []
-    first_offer = offers[0] if offers else None
     seller_name = brand
-    if isinstance(first_offer, dict):
-        seller_name = str(first_offer.get("merchant_name", brand))
-        in_stock = bool(first_offer.get("in_stock", True))
-    elif first_offer is not None:
-        seller_name = str(getattr(first_offer, "merchant_name", brand))
-        in_stock = bool(getattr(first_offer, "in_stock", True))
+    if first_offer is not None:
+        seller_name = str(
+            _attr(first_offer, "merchant_name", "")
+            or _attr(first_offer, "domain", "")
+            or brand
+        )
+        raw_in_stock = _attr(first_offer, "in_stock", None)
+        if raw_in_stock is not None:
+            in_stock = bool(raw_in_stock)
+        else:
+            avail = str(_attr(first_offer, "availability", "InStock"))
+            in_stock = avail.lower() not in {"outofstock", "out_of_stock", "discontinued"}
     else:
-        in_stock = bool(get_attr("availability", "in_stock") != "out_of_stock")
+        in_stock = bool(_attr(raw, "availability", "in_stock") != "out_of_stock")
 
-    categories = get_attr("categories", None) or []
-    cat = str(categories[0]) if categories else str(get_attr("category", "general"))
+    categories = _attr(raw, "categories", None) or []
+    cat_obj = _attr(raw, "category", None)
+    if categories:
+        cat = str(categories[0])
+    elif cat_obj is not None and not isinstance(cat_obj, str):
+        cat = str(_attr(cat_obj, "slug", "") or _attr(cat_obj, "title", "general"))
+    else:
+        cat = str(cat_obj or "general")
 
     return Product(
         product_id=product_id,
@@ -86,13 +108,31 @@ class Channel3Catalog:
         if filters and filters.get("category_ids"):
             ch3_filters["category_ids"] = filters["category_ids"]
 
-        def _call() -> Any:
-            return self._client.products.search(
-                query=query, filters=ch3_filters or None, limit=limit
-            )
+        effective_query = query.strip()
 
-        res = await asyncio.to_thread(_call)
-        raw_items = res if isinstance(res, list) else getattr(res, "products", None) or getattr(res, "data", [])
+        def _call() -> list[Any]:
+            kwargs: dict[str, Any] = {"query": effective_query, "limit": limit}
+            if ch3_filters:
+                kwargs["filters"] = ch3_filters
+            res = self._client.products.search(**kwargs)
+            if isinstance(res, list):
+                return res[:limit]
+            products_attr = getattr(res, "products", None)
+            if products_attr is not None:
+                return list(products_attr)[:limit]
+            data_attr = getattr(res, "data", None)
+            if data_attr is not None:
+                return list(data_attr)[:limit]
+            return list(itertools.islice(res, limit))
+
+        try:
+            raw_items = await asyncio.to_thread(_call)
+        except Exception:
+            # Channel3's backend rejects an empty query when no filters/image/page_token are given;
+            # return cached items instead of substituting a synthetic default query.
+            if not effective_query:
+                return list(self._cache.values())[:limit]
+            raise
         mapped = [_map_channel3_product(item) for item in raw_items]
         for p in mapped:
             self._cache[p.product_id] = p

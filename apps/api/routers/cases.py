@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 from apps.api.auth import require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
+    BryntumEvent,
+    BryntumResource,
+    BryntumTimelineResponse,
     CaseListResponse,
     CaseResponse,
     SnapshotDiffResponse,
@@ -190,6 +193,60 @@ async def list_cases(
 ) -> CaseListResponse:
     rows = await container.store.list_cases(mandate_id=mandate_id, state=state, limit=limit)
     return CaseListResponse(cases=rows)
+
+
+_CASE_COLORS = {
+    "VERIFIED": "green",
+    "CAPTURED": "teal",
+    "AUTHORIZED": "blue",
+    "BLOCKED": "red",
+    "CANCELLED": "gray",
+    "NEEDS_RECONFIRM": "orange",
+    "FLAGGED": "amber",
+}
+
+
+@router.get("/timeline", response_model=BryntumTimelineResponse)
+async def cases_timeline(
+    mandate_id: str | None = None,
+    limit: int = 50,
+    container: AppContainer = Depends(get_container),
+) -> BryntumTimelineResponse:
+    """Bryntum Scheduler/Gantt compatible timeline of enforcement cases and hold windows."""
+    rows = await container.store.list_cases(mandate_id=mandate_id, limit=max(1, min(limit, 200)))
+    seen_mandates: dict[str, BryntumResource] = {}
+    events: list[BryntumEvent] = []
+    for c in rows:
+        if c.mandate_id not in seen_mandates:
+            seen_mandates[c.mandate_id] = BryntumResource(
+                id=c.mandate_id,
+                name=f"Mandate {c.mandate_id}",
+                role="mandate",
+                meta={"mandate_version": c.mandate_version},
+            )
+        end_dt = c.hold_expires_at or c.updated_at
+        if end_dt <= c.created_at:
+            end_dt = c.created_at
+        events.append(
+            BryntumEvent(
+                id=c.case_id,
+                resourceId=c.mandate_id,
+                name=f"{c.proposal.title} ({c.proposal.claimed_total.to_str()})",
+                startDate=c.created_at.isoformat(),
+                endDate=end_dt.isoformat(),
+                status=c.state.value,
+                eventColor=_CASE_COLORS.get(c.state.value, "indigo"),
+                meta={
+                    "case_id": c.case_id,
+                    "product_id": c.proposal.product_id,
+                    "paypal_order_id": c.paypal_order_id,
+                },
+            )
+        )
+    return BryntumTimelineResponse(
+        resources=list(seen_mandates.values()),
+        events=events,
+    )
 
 
 @router.get("/{case_id}", response_model=CaseResponse)

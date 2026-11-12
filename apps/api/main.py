@@ -18,10 +18,12 @@ from apps.api.routers import (
     commands,
     demo_lab,
     email_pack,
+    integrations,
     ledger,
     mandates,
     webhooks,
 )
+from apps.api.routers.integrations import integration_flags
 from apps.api.schemas import HealthResponse, ReadyResponse
 
 
@@ -107,6 +109,8 @@ def create_app(
             paypal_mode=c.settings.paypal_mode,
             catalog_provider=c.settings.catalog_provider,
             llm_provider=c.settings.llm_provider if c.llm else "deterministic",
+            notifier_provider=c.settings.notifier_provider,
+            integrations_configured=integration_flags(c),
         )
 
     app.include_router(commands.router)
@@ -115,6 +119,7 @@ def create_app(
     app.include_router(catalog.router)
     app.include_router(ledger.router)
     app.include_router(webhooks.router)
+    app.include_router(integrations.router)
     app.include_router(demo_lab.router)
     app.include_router(email_pack.router)
 

@@ -25,6 +25,8 @@ class ReadyResponse(BaseModel):
     paypal_mode: str
     catalog_provider: str
     llm_provider: str
+    notifier_provider: str = "console"
+    integrations_configured: dict[str, bool] = Field(default_factory=dict)
 
 
 class MandateResponse(BaseModel):
@@ -122,13 +124,128 @@ class EmailPolicyCheckResponse(BaseModel):
     ledger_seq: int
 
 
+class IntegrationServiceStatus(BaseModel):
+    name: str
+    configured: bool
+    mode: str
+    live_ok: bool | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class IntegrationsStatusResponse(BaseModel):
+    probed: bool
+    services: list[IntegrationServiceStatus]
+
+
+class KernelVerifyUrlRequest(BaseModel):
+    url: str | None = None
+    product_id: str | None = None
+
+
+class KernelVerifyUrlResponse(BaseModel):
+    verified: bool
+    mode: str
+    url: str
+    domain: str
+    session_id: str | None = None
+    cdp_ready: bool = False
+    checks: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    observed_title: str | None = None
+    observed_price: str | None = None
+    product_id: str | None = None
+
+
+class ElasticSyncResponse(BaseModel):
+    mode: str
+    catalog_indexed: int
+    ledger_indexed: int
+    errors: bool
+
+
+class ElasticSearchHit(BaseModel):
+    id: str
+    score: float
+    source: dict[str, Any]
+
+
+class ElasticSearchResponse(BaseModel):
+    mode: str
+    index: str
+    total: int
+    hits: list[ElasticSearchHit]
+
+
+class RenderWorkflowTriggerRequest(BaseModel):
+    task_slug: str | None = None
+    input_args: list[Any] = Field(default_factory=list)
+    run_local_recheck: bool = True
+
+
+class RenderWorkflowRunResponse(BaseModel):
+    run_id: str
+    task_slug: str
+    status: str
+    mode: str
+    started_at: str | None = None
+    input: list[Any] = Field(default_factory=list)
+    results: dict[str, Any] = Field(default_factory=dict)
+
+
+class ZapierTestRequest(BaseModel):
+    event: str = "MANDATE_TEST_NOTIFICATION"
+    case_id: str | None = None
+    message: str = "Mandate firewall Zapier webhook connectivity test"
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ZapierTestResponse(BaseModel):
+    delivered: bool
+    mode: str
+    event: str
+
+
+class BryntumResource(BaseModel):
+    id: str
+    name: str
+    role: str
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class BryntumEvent(BaseModel):
+    id: str
+    resourceId: str
+    name: str
+    startDate: str
+    endDate: str
+    status: str
+    eventColor: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class BryntumTimelineResponse(BaseModel):
+    format: str = "bryntum-scheduler-v1"
+    resources: list[BryntumResource]
+    events: list[BryntumEvent]
+
+
 __all__ = [
     "AgentTrustScore",
+    "BryntumEvent",
+    "BryntumResource",
+    "BryntumTimelineResponse",
     "CaseListResponse",
     "CaseResponse",
     "CatalogSearchResponse",
+    "ElasticSearchHit",
+    "ElasticSearchResponse",
+    "ElasticSyncResponse",
     "EmailPolicyCheckResponse",
     "HealthResponse",
+    "IntegrationServiceStatus",
+    "IntegrationsStatusResponse",
+    "KernelVerifyUrlRequest",
+    "KernelVerifyUrlResponse",
     "LedgerListResponse",
     "LedgerVerificationResult",
     "MandateDraftResponse",
@@ -137,6 +254,8 @@ __all__ = [
     "ProductResponse",
     "RankedOptionResponse",
     "ReadyResponse",
+    "RenderWorkflowRunResponse",
+    "RenderWorkflowTriggerRequest",
     "RevokeAllResponse",
     "ShoppingAgentResponse",
     "ShoppingOptionsResponse",
@@ -144,4 +263,6 @@ __all__ = [
     "SnapshotListResponse",
     "WebhookResponse",
     "WhyResponse",
+    "ZapierTestRequest",
+    "ZapierTestResponse",
 ]

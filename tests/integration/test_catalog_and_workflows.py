@@ -341,3 +341,118 @@ async def test_gemini_shopping_agent_2_tool_loop_never_touches_paypal() -> None:
     finally:
         await store.dispose()
 
+
+@pytest.mark.asyncio
+async def test_gemini_models_api_branch_and_fail_closed_guards() -> None:
+    from types import SimpleNamespace
+
+    from mandate_core.statemachine import Orchestrator
+    from mandate_core.workflows import run_shopping_agent
+
+    from adapters.llm_gemini import GeminiLLM
+    from adapters.paypal import MockPayPalProvider
+    from adapters.persistence import SqlAlchemyStateStore, create_engine_and_sessionmaker
+
+    mode = {"scenario": "compile"}
+    tool_turn = {"n": 0}
+
+    class _FakeModels:
+        def generate_content(self, **kwargs: Any) -> Any:
+            s = mode["scenario"]
+            if s == "compile":
+                return SimpleNamespace(
+                    text='```json\n{"max_total_amount": 42, "currency": "USD"}\n```'
+                )
+            if s == "bad_rank":
+                return SimpleNamespace(text="{not valid json")
+            if s == "bad_audit":
+                return SimpleNamespace(text="not-json-at-all")
+            tool_turn["n"] += 1
+            if tool_turn["n"] == 1:
+                return SimpleNamespace(
+                    text="",
+                    candidates=[SimpleNamespace(content="turn-1")],
+                    function_calls=[
+                        SimpleNamespace(
+                            name="search_products",
+                            args={"query": "candle", "limit": "not-an-int"},
+                        )
+                    ],
+                )
+            if tool_turn["n"] == 2:
+                return SimpleNamespace(
+                    text="",
+                    candidates=[SimpleNamespace(content="turn-2")],
+                    function_calls=[
+                        SimpleNamespace(
+                            name="propose_purchase",
+                            args={
+                                "product_id": "prod-gift-02",
+                                "quantity": "1",
+                                "rationale": "Models API proposal",
+                            },
+                        )
+                    ],
+                )
+            return SimpleNamespace(text="Done via models API.", function_calls=[])
+
+    fake_client = SimpleNamespace(models=_FakeModels())
+    gemini = GeminiLLM(api_key="test-key", client=fake_client)
+    assert gemini.model == "gemini-3.6-flash"
+    assert gemini._use_models_api() is True
+
+    compiled = await gemini.compile_mandate("Spend under $42")
+    assert compiled["max_total_amount"] == "42"
+
+    mode["scenario"] = "bad_rank"
+    assert await gemini.rank_candidates(intent_text="candle", candidates=[]) == []
+
+    mode["scenario"] = "bad_audit"
+    mandate = Mandate(
+        intent_text="candle under $50",
+        max_total=Money.of("50.00", "USD"),
+        expires_at=utcnow() + timedelta(hours=1),
+        status=MandateStatus.ACTIVE,
+    )
+    snap = CaseSnapshot(
+        case_id="c-models",
+        checkpoint="C3",
+        mandate_id=mandate.mandate_id,
+        mandate_version=1,
+        product_id="prod-gift-02",
+        title="Candle",
+        quantity=1,
+        unit_price=Money.of("25.00", "USD"),
+        total_amount=Money.of("25.00", "USD"),
+        seller_id="seller-a",
+        seller_name="Seller A",
+        seller_verified=True,
+        payee_id="SELLER-A",
+        in_stock=True,
+        category="gifts",
+    )
+    verdict = await gemini.audit_snapshot(mandate=mandate, snapshot=snap, untrusted_product_text="Nice candle")
+    assert verdict.verdict == "flag"
+
+    mode["scenario"] = "tools"
+    engine, factory = create_engine_and_sessionmaker("sqlite+aiosqlite:///:memory:")
+    store = SqlAlchemyStateStore(engine, factory)
+    await store.init_schema()
+    try:
+        await store.save_mandate(mandate)
+        orch = Orchestrator(store=store, catalog=MockCatalog(), payment=MockPayPalProvider())
+        res = await run_shopping_agent(
+            mandate=mandate,
+            query="candle",
+            catalog=MockCatalog(),
+            orchestrator=orch,
+            llm=gemini,
+        )
+        assert res["tools_exposed"] == ["search_products", "propose_purchase"]
+        assert res["case"] is not None
+        assert res["case"]["state"] == "PROPOSED"
+        assert res["case"]["proposal"]["product_id"] == "prod-gift-02"
+    finally:
+        await store.dispose()
+
+

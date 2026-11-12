@@ -1,10 +1,23 @@
 from __future__ import annotations
 
 import hmac
+from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request
 
+from adapters.auth import verify_session_token
 from apps.api.dependencies import AppContainer, get_container
+
+
+@dataclass(frozen=True)
+class AuthIdentity:
+    user_id: str | None
+    role: str
+    actor: str
+    email: str | None = None
+    phone_number: str | None = None
+    display_name: str = "User"
+    auth_method: str = "anonymous"
 
 
 def _extract_token(request: Request) -> str | None:
@@ -25,21 +38,72 @@ def _matches(presented: str, expected: str) -> bool:
     )
 
 
+def _resolve_token_identity(token: str, container: AppContainer) -> AuthIdentity:
+    if _matches(token, container.settings.api_admin_token):
+        return AuthIdentity(
+            user_id=None,
+            role="admin",
+            actor="admin",
+            display_name="Admin",
+            auth_method="static_token",
+        )
+    if _matches(token, container.settings.api_user_token):
+        return AuthIdentity(
+            user_id=None,
+            role="user",
+            actor="user",
+            display_name="API User",
+            auth_method="static_token",
+        )
+    try:
+        claims = verify_session_token(token, secret=container.settings.auth_jwt_secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid API or session token: {exc}") from exc
+    return AuthIdentity(
+        user_id=claims.user_id,
+        role=claims.role,
+        actor=claims.user_id,
+        email=claims.email,
+        phone_number=claims.phone_number,
+        display_name=claims.display_name,
+        auth_method="jwt",
+    )
+
+
+async def get_optional_identity(
+    request: Request,
+    container: AppContainer = Depends(get_container),
+) -> AuthIdentity | None:
+    """Resolve signed-in JWT or static token identity if Authorization/x-api-key is sent."""
+    token = _extract_token(request)
+    if not token:
+        return None
+    return _resolve_token_identity(token, container)
+
+
+async def require_authenticated_identity(
+    request: Request,
+    container: AppContainer = Depends(get_container),
+) -> AuthIdentity:
+    """Always require a valid session JWT or static API token (used by /auth/me)."""
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Bearer token or x-api-key header")
+    return _resolve_token_identity(token, container)
+
+
 async def require_user_auth(
     request: Request,
     container: AppContainer = Depends(get_container),
 ) -> str:
-    """Enforce Bearer/x-api-key authentication when settings.require_auth is True."""
-    if not container.settings.require_auth:
-        return "user"
+    """Enforce session JWT or Bearer/x-api-key authentication when settings.require_auth is True."""
     token = _extract_token(request)
     if not token:
+        if not container.settings.require_auth:
+            return "user"
         raise HTTPException(status_code=401, detail="Missing Bearer token or x-api-key header")
-    if _matches(token, container.settings.api_admin_token):
-        return "admin"
-    if _matches(token, container.settings.api_user_token):
-        return "user"
-    raise HTTPException(status_code=401, detail="Invalid API token")
+    identity = _resolve_token_identity(token, container)
+    return identity.role
 
 
 async def require_admin_auth(
@@ -47,13 +111,12 @@ async def require_admin_auth(
     container: AppContainer = Depends(get_container),
 ) -> str:
     """Enforce admin-only authentication when settings.require_auth is True."""
-    if not container.settings.require_auth:
-        return "admin"
     token = _extract_token(request)
     if not token:
+        if not container.settings.require_auth:
+            return "admin"
         raise HTTPException(status_code=401, detail="Missing Bearer token or x-api-key header")
-    if _matches(token, container.settings.api_admin_token):
-        return "admin"
-    if _matches(token, container.settings.api_user_token):
+    identity = _resolve_token_identity(token, container)
+    if identity.role != "admin":
         raise HTTPException(status_code=403, detail="Admin token required")
-    raise HTTPException(status_code=401, detail="Invalid API token")
+    return "admin"

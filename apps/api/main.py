@@ -13,6 +13,7 @@ from mandate_core.domain.errors import MandateCoreError
 from apps.api.config import Settings
 from apps.api.dependencies import AppContainer, build_container
 from apps.api.routers import (
+    auth,
     cases,
     catalog,
     commands,
@@ -113,6 +114,7 @@ def create_app(
             integrations_configured=integration_flags(c),
         )
 
+    app.include_router(auth.router)
     app.include_router(commands.router)
     app.include_router(mandates.router)
     app.include_router(cases.router)

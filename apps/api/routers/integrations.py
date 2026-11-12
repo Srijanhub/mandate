@@ -37,6 +37,8 @@ def integration_flags(c: AppContainer) -> dict[str, bool]:
         "elastic": c.elastic.is_live,
         "render_workflows": c.render_workflows.is_live,
         "zapier": bool(s.zapier_webhook_url),
+        "google_auth": c.google_verifier.is_live,
+        "twilio_sms": c.sms_sender.is_live,
     }
 
 
@@ -197,6 +199,18 @@ async def integrations_status(
             configured=True,
             mode="openapi_3_1",
             details={"collection": "docs/mandate-postman-collection.json"},
+        ),
+        IntegrationServiceStatus(
+            name="google_auth",
+            configured=flags["google_auth"],
+            mode="live" if flags["google_auth"] else ("demo" if s.auth_allow_demo_mode else "disabled"),
+            details={"endpoints": ["GET /auth/config", "POST /auth/google", "GET /auth/me"]},
+        ),
+        IntegrationServiceStatus(
+            name="twilio_sms",
+            configured=flags["twilio_sms"],
+            mode="twilio" if flags["twilio_sms"] else "demo",
+            details={"endpoints": ["POST /auth/phone/request-otp", "POST /auth/phone/verify-otp"]},
         ),
     ]
     return IntegrationsStatusResponse(probed=probe, services=services)

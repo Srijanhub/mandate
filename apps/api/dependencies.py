@@ -15,6 +15,7 @@ from mandate_core.workflows import (
     search_and_ask_preference,
 )
 
+from adapters.auth import GoogleIdentityVerifier, SmsOtpSender
 from adapters.catalog_channel3 import Channel3Catalog
 from adapters.catalog_mock import MockCatalog
 from adapters.llm_astropods import AstropodsLLM
@@ -42,6 +43,8 @@ class AppContainer:
     kernel: KernelVerifier
     elastic: ElasticSearchAdapter
     render_workflows: RenderWorkflowsClient
+    google_verifier: GoogleIdentityVerifier
+    sms_sender: SmsOtpSender
     last_options: list[RankedOption] = field(default_factory=list)
 
 
@@ -55,6 +58,8 @@ def build_container(
     kernel: KernelVerifier | None = None,
     elastic: ElasticSearchAdapter | None = None,
     render_workflows: RenderWorkflowsClient | None = None,
+    google_verifier: GoogleIdentityVerifier | None = None,
+    sms_sender: SmsOtpSender | None = None,
 ) -> AppContainer:
     engine, session_factory = create_engine_and_sessionmaker(settings.database_url)
     store = SqlAlchemyStateStore(engine, session_factory)
@@ -117,6 +122,15 @@ def build_container(
         api_base=settings.render_api_base,
         default_task_slug=settings.render_workflow_task_slug,
     )
+    resolved_google = google_verifier or GoogleIdentityVerifier(
+        client_id=settings.google_client_id,
+        allow_demo_mode=settings.auth_allow_demo_mode,
+    )
+    resolved_sms = sms_sender or SmsOtpSender(
+        account_sid=settings.twilio_account_sid,
+        auth_token=settings.twilio_auth_token,
+        from_number=settings.twilio_from_number,
+    )
 
     orchestrator = Orchestrator(
         store=store,
@@ -138,6 +152,8 @@ def build_container(
         kernel=resolved_kernel,
         elastic=resolved_elastic,
         render_workflows=resolved_render,
+        google_verifier=resolved_google,
+        sms_sender=resolved_sms,
     )
 
     async def _compile_and_draft(text: str, actor: str) -> dict[str, Any]:

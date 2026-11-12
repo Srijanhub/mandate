@@ -82,6 +82,203 @@
       }
     },
     {
+      "name": "Auth Config",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "config"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sign In With Google",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/google",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "google"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id_token\": \"sample\",\n  \"demo_email\": \"vinay@example.com\",\n  \"demo_name\": \"Vinay Khandia\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Request Phone Otp",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/phone/request-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "phone",
+            "request-otp"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone_number\": \"+14155550199\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Verify Phone Otp",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/phone/verify-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "phone",
+            "verify-otp"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"otp_sample_001\",\n  \"phone_number\": \"+14155550199\",\n  \"code\": \"123456\",\n  \"display_name\": \"Vinay Khandia\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Get Current User",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "me"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Logout Session",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/logout",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "logout"
+          ]
+        }
+      }
+    },
+    {
       "name": "Execute Command",
       "request": {
         "method": "POST",

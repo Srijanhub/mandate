@@ -27,6 +27,12 @@ _FIELD_EXAMPLES: dict[str, Any] = {
     "recipient_email": "teammate@example.com",
     "subject": "Weekly Mandate Digest",
     "body": "Summary of approved purchases.",
+    "phone_number": "+14155550199",
+    "challenge_id": "otp_sample_001",
+    "code": "123456",
+    "demo_email": "vinay@example.com",
+    "demo_name": "Vinay Khandia",
+    "display_name": "Vinay Khandia",
 }
 
 

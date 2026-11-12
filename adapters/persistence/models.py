@@ -110,3 +110,37 @@ class WebhookEventRow(Base):
     event_type: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        Index("idx_users_last_login", "last_login_at"),
+    )
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, index=True, nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, nullable=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    role: Mapped[str] = mapped_column(String(32), default="user", nullable=False)
+    auth_providers_json: Mapped[list[str]] = mapped_column(JsonType, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OtpChallengeRow(Base):
+    __tablename__ = "otp_challenges"
+    __table_args__ = (
+        Index("idx_otp_phone_created", "phone_number", "created_at"),
+    )
+
+    challenge_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    phone_number: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

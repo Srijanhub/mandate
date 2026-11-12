@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     api_user_token: str = "dev-user-token-change-me"
     require_auth: bool = False
 
+    google_client_id: str = ""
+    auth_jwt_secret: str = "dev-mandate-jwt-secret-change-me"
+    auth_token_ttl_seconds: int = 86_400
+    auth_allow_demo_mode: bool = True
+    auth_expose_demo_otp: bool = True
+
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+
     paypal_mode: str = "mock"  # mock | sandbox | live
     paypal_client_id: str = ""
     paypal_client_secret: str = ""

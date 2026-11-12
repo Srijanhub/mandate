@@ -3,8 +3,10 @@ from .models import (
     CaseRow,
     LedgerEntryRow,
     MandateRow,
+    OtpChallengeRow,
     RecheckJobRow,
     SnapshotRow,
+    UserRow,
     WebhookEventRow,
 )
 from .seed import seed_demo_data
@@ -20,10 +22,12 @@ __all__ = [
     "CaseRow",
     "LedgerEntryRow",
     "MandateRow",
+    "OtpChallengeRow",
     "PG_LEDGER_ADVISORY_LOCK_ID",
     "RecheckJobRow",
     "SnapshotRow",
     "SqlAlchemyStateStore",
+    "UserRow",
     "WebhookEventRow",
     "create_engine_and_sessionmaker",
     "normalize_database_url",

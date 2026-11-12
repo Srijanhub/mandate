@@ -5,7 +5,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_user_auth
+from apps.api.auth import AuthIdentity, get_optional_identity, require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 
 router = APIRouter(prefix="/commands", tags=["Commands"], dependencies=[Depends(require_user_auth)])
@@ -22,6 +22,7 @@ class CommandRequest(BaseModel):
 @router.post("")
 async def execute_command(
     body: CommandRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> dict[str, Any]:
     """
@@ -29,15 +30,18 @@ async def execute_command(
     Deterministic `/` parser runs BEFORE any LLM call; untrusted sources are blocked.
     Natural language (non-`/` text) is treated as intent-only and compiles a DRAFT mandate.
     """
+    effective_actor = (
+        identity.user_id if (identity and identity.user_id and body.actor == "user") else body.actor
+    )
     result = await container.commands.execute_raw(
         body.text,
         source=body.source,
-        actor=body.actor,
+        actor=effective_actor,
         case_id=body.case_id,
         mandate_id=body.mandate_id,
     )
     if not result["is_command"]:
         # Natural language never executes an action directly; only drafts an unconfirmed Mandate.
-        drafted = await container.commands.compile_and_draft(body.text, body.actor)  # type: ignore[misc]
+        drafted = await container.commands.compile_and_draft(body.text, effective_actor)  # type: ignore[misc]
         return {"is_command": False, "action": "mandate_draft_only", **drafted}
     return result

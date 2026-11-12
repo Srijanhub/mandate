@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from mandate_core.domain.errors import IllegalTransitionError, PolicyBlockedError
+from mandate_core.domain.errors import IllegalTransitionError, PolicyBlockedError, ValidationError
 from mandate_core.domain.models import (
     Case,
     CaseSnapshot,
@@ -21,7 +22,7 @@ from mandate_core.domain.models import (
 )
 from mandate_core.ledger import GENESIS_HASH, compute_entry_hash
 from mandate_core.statemachine.transitions import OPEN_CASE_STATES
-from sqlalchemy import Select, event, func, select, text
+from sqlalchemy import Select, event, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import (
@@ -36,8 +37,10 @@ from .models import (
     CaseRow,
     LedgerEntryRow,
     MandateRow,
+    OtpChallengeRow,
     RecheckJobRow,
     SnapshotRow,
+    UserRow,
     WebhookEventRow,
 )
 
@@ -692,3 +695,250 @@ class SqlAlchemyStateStore:
         from .seed import seed_demo_data
 
         return await seed_demo_data(self, seller_a_id=seller_a_id, seller_b_id=seller_b_id)
+
+    # ------------------------------------------------------------------
+    # Users & Mobile OTP Challenges (Google + Phone Auth)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ensure_utc(dt: datetime) -> datetime:
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+    def _map_user_row(self, row: UserRow) -> dict[str, Any]:
+        return {
+            "user_id": row.user_id,
+            "email": row.email,
+            "phone_number": row.phone_number,
+            "google_sub": row.google_sub,
+            "display_name": row.display_name,
+            "avatar_url": row.avatar_url,
+            "role": row.role,
+            "auth_providers": list(row.auth_providers_json or []),
+            "created_at": self._ensure_utc(row.created_at),
+            "last_login_at": self._ensure_utc(row.last_login_at),
+        }
+
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
+        async with self._session() as session:
+            row = await session.get(UserRow, user_id)
+            return self._map_user_row(row) if row else None
+
+    async def upsert_google_user(
+        self,
+        *,
+        google_sub: str,
+        email: str,
+        display_name: str,
+        avatar_url: str | None = None,
+        link_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        norm_email = email.strip().lower()
+        now = utcnow()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                by_sub = (
+                    await session.execute(select(UserRow).where(UserRow.google_sub == google_sub))
+                ).scalar_one_or_none()
+                by_email = (
+                    await session.execute(select(UserRow).where(UserRow.email == norm_email))
+                ).scalar_one_or_none()
+
+                if by_sub is not None and by_email is not None and by_sub.user_id != by_email.user_id:
+                    raise ValidationError("Google email is already associated with another user account")
+
+                row = by_sub or by_email
+                if row is None and link_user_id:
+                    row = await session.get(UserRow, link_user_id)
+                    if row is not None and (by_sub is not None or by_email is not None):
+                        raise ValidationError("Google account is already linked to another user")
+
+                if row is None:
+                    row = UserRow(
+                        user_id=new_id("usr"),
+                        email=norm_email,
+                        phone_number=None,
+                        google_sub=google_sub,
+                        display_name=display_name.strip() or norm_email.split("@", 1)[0],
+                        avatar_url=avatar_url,
+                        role="user",
+                        auth_providers_json=["google"],
+                        created_at=now,
+                        updated_at=now,
+                        last_login_at=now,
+                    )
+                    session.add(row)
+                else:
+                    if link_user_id and row.user_id != link_user_id:
+                        raise ValidationError("Google account is already linked to another user")
+                    providers = list(row.auth_providers_json or [])
+                    if "google" not in providers:
+                        providers.append("google")
+                    row.google_sub = google_sub
+                    row.email = norm_email
+                    if display_name.strip():
+                        row.display_name = display_name.strip()
+                    if avatar_url:
+                        row.avatar_url = avatar_url
+                    row.auth_providers_json = providers
+                    row.updated_at = now
+                    row.last_login_at = now
+
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
+                return self._map_user_row(row)
+
+    async def upsert_phone_user(
+        self,
+        *,
+        phone_number: str,
+        display_name: str | None = None,
+        link_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                by_phone = (
+                    await session.execute(select(UserRow).where(UserRow.phone_number == phone_number))
+                ).scalar_one_or_none()
+
+                if link_user_id and by_phone is not None and by_phone.user_id != link_user_id:
+                    raise ValidationError("Phone number is already linked to another user account")
+
+                row = by_phone
+                if row is None and link_user_id:
+                    row = await session.get(UserRow, link_user_id)
+
+                if row is None:
+                    fallback_name = f"User {phone_number[-4:]}"
+                    row = UserRow(
+                        user_id=new_id("usr"),
+                        email=None,
+                        phone_number=phone_number,
+                        google_sub=None,
+                        display_name=(display_name or "").strip() or fallback_name,
+                        avatar_url=None,
+                        role="user",
+                        auth_providers_json=["phone"],
+                        created_at=now,
+                        updated_at=now,
+                        last_login_at=now,
+                    )
+                    session.add(row)
+                else:
+                    providers = list(row.auth_providers_json or [])
+                    if "phone" not in providers:
+                        providers.append("phone")
+                    row.phone_number = phone_number
+                    if display_name and display_name.strip():
+                        row.display_name = display_name.strip()
+                    row.auth_providers_json = providers
+                    row.updated_at = now
+                    row.last_login_at = now
+
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
+                return self._map_user_row(row)
+
+    async def create_otp_challenge(
+        self,
+        *,
+        challenge_id: str,
+        phone_number: str,
+        code_hash: str,
+        expires_at: datetime,
+        max_per_window: int = 5,
+        window_seconds: int = 300,
+    ) -> str:
+        now = utcnow()
+        window_start = now - timedelta(seconds=window_seconds)
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                recent_cnt = int(
+                    (
+                        await session.execute(
+                            select(func.count())
+                            .select_from(OtpChallengeRow)
+                            .where(
+                                OtpChallengeRow.phone_number == phone_number,
+                                OtpChallengeRow.created_at >= window_start,
+                            )
+                        )
+                    ).scalar_one()
+                )
+                if recent_cnt >= max_per_window:
+                    raise ValidationError(
+                        "Too many OTP requests for this phone number; please wait a few minutes"
+                    )
+
+                await session.execute(
+                    update(OtpChallengeRow)
+                    .where(
+                        OtpChallengeRow.phone_number == phone_number,
+                        OtpChallengeRow.consumed_at.is_(None),
+                    )
+                    .values(consumed_at=now)
+                )
+
+                session.add(
+                    OtpChallengeRow(
+                        challenge_id=challenge_id,
+                        phone_number=phone_number,
+                        code_hash=code_hash,
+                        attempts=0,
+                        expires_at=expires_at,
+                        consumed_at=None,
+                        created_at=now,
+                    )
+                )
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
+        return challenge_id
+
+    async def verify_otp_challenge(
+        self,
+        *,
+        challenge_id: str,
+        phone_number: str,
+        expected_hash: str,
+        max_attempts: int = 5,
+    ) -> None:
+        now = utcnow()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                stmt = select(OtpChallengeRow).where(OtpChallengeRow.challenge_id == challenge_id)
+                if self.is_postgres:
+                    stmt = stmt.with_for_update()
+                row = (await session.execute(stmt)).scalar_one_or_none()
+                if row is None or row.phone_number != phone_number:
+                    raise ValidationError("Invalid or unknown OTP challenge")
+                if row.consumed_at is not None:
+                    raise ValidationError("OTP challenge has already been used or superseded")
+                if self._ensure_utc(row.expires_at) <= now:
+                    row.consumed_at = now
+                    await session.flush()
+                    if _CURRENT_SESSION.get() is None:
+                        await session.commit()
+                    raise ValidationError("OTP code has expired; please request a new one")
+                if row.attempts >= max_attempts:
+                    row.consumed_at = now
+                    await session.flush()
+                    if _CURRENT_SESSION.get() is None:
+                        await session.commit()
+                    raise ValidationError("Maximum OTP verification attempts exceeded")
+
+                if not hmac.compare_digest(row.code_hash, expected_hash):
+                    row.attempts += 1
+                    if row.attempts >= max_attempts:
+                        row.consumed_at = now
+                    await session.flush()
+                    if _CURRENT_SESSION.get() is None:
+                        await session.commit()
+                    raise ValidationError("Incorrect OTP verification code")
+
+                row.consumed_at = now
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()

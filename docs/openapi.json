@@ -48,6 +48,198 @@
         }
       }
     },
+    "/auth/config": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Auth Config",
+        "description": "Expose public Sign-In capabilities (Google Client ID, phone OTP mode) for the frontend.",
+        "operationId": "auth_config_auth_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Sign In With Google",
+        "description": "Verify Google ID token (or demo email when unconfigured) and issue a Mandate session JWT.",
+        "operationId": "sign_in_with_google_auth_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/phone/request-otp": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Request Phone Otp",
+        "description": "Send a rate-limited, single-use 6-digit SMS OTP code to a mobile number (E.164).",
+        "operationId": "request_phone_otp_auth_phone_request_otp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneOtpRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/phone/verify-otp": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Verify Phone Otp",
+        "description": "Verify a mobile OTP challenge, upsert user (or link to signed-in session), and issue JWT.",
+        "operationId": "verify_phone_otp_auth_phone_verify_otp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneOtpVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Current User",
+        "description": "Return the currently authenticated Google/Mobile user or static API token identity.",
+        "operationId": "get_current_user_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout Session",
+        "description": "Acknowledge client sign-out cleanly.",
+        "operationId": "logout_session_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLogoutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/commands": {
       "post": {
         "tags": [
@@ -2568,6 +2760,185 @@
         "type": "object",
         "title": "AmendMandateRequest"
       },
+      "AuthConfigResponse": {
+        "properties": {
+          "google_enabled": {
+            "type": "boolean",
+            "title": "Google Enabled"
+          },
+          "google_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Client Id"
+          },
+          "google_mode": {
+            "type": "string",
+            "title": "Google Mode"
+          },
+          "phone_enabled": {
+            "type": "boolean",
+            "title": "Phone Enabled",
+            "default": true
+          },
+          "phone_mode": {
+            "type": "string",
+            "title": "Phone Mode"
+          },
+          "demo_otp_exposed": {
+            "type": "boolean",
+            "title": "Demo Otp Exposed"
+          },
+          "require_auth": {
+            "type": "boolean",
+            "title": "Require Auth"
+          }
+        },
+        "type": "object",
+        "required": [
+          "google_enabled",
+          "google_mode",
+          "phone_mode",
+          "demo_otp_exposed",
+          "require_auth"
+        ],
+        "title": "AuthConfigResponse"
+      },
+      "AuthLogoutResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "logged_out"
+          }
+        },
+        "type": "object",
+        "title": "AuthLogoutResponse"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "mode",
+          "user"
+        ],
+        "title": "AuthSessionResponse"
+      },
+      "AuthUserResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": "user"
+          },
+          "auth_providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Auth Providers"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name"
+        ],
+        "title": "AuthUserResponse"
+      },
       "AuthorizeRequest": {
         "properties": {
           "existing_order_id": {
@@ -3349,6 +3720,48 @@
         ],
         "title": "FindingSeverity"
       },
+      "GoogleAuthRequest": {
+        "properties": {
+          "id_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8192
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Token"
+          },
+          "demo_email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 320
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demo Email"
+          },
+          "demo_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demo Name"
+          }
+        },
+        "type": "object",
+        "title": "GoogleAuthRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4004,6 +4417,101 @@
         ],
         "title": "Money",
         "description": "Exact monetary amount + ISO-4217 currency. Never uses floating point."
+      },
+      "PhoneOtpRequest": {
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Phone Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone_number"
+        ],
+        "title": "PhoneOtpRequest"
+      },
+      "PhoneOtpRequestResponse": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "title": "Challenge Id"
+          },
+          "phone_number": {
+            "type": "string",
+            "title": "Phone Number"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "demo_otp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demo Otp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "phone_number",
+          "expires_in_seconds",
+          "mode"
+        ],
+        "title": "PhoneOtpRequestResponse"
+      },
+      "PhoneOtpVerifyRequest": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 4,
+            "title": "Challenge Id"
+          },
+          "phone_number": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Phone Number"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 4,
+            "title": "Code"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "phone_number",
+          "code"
+        ],
+        "title": "PhoneOtpVerifyRequest"
       },
       "PickOptionRequest": {
         "properties": {

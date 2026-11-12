@@ -9,7 +9,7 @@ from mandate_core.domain.models import Mandate, Money
 from mandate_core.workflows import compile_mandate_from_text
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_user_auth
+from apps.api.auth import AuthIdentity, get_optional_identity, require_user_auth
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     BryntumEvent,
@@ -53,12 +53,18 @@ class RevokeRequest(BaseModel):
 @router.post("/compile", status_code=201, response_model=MandateDraftResponse)
 async def compile_mandate(
     body: CompileMandateRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateDraftResponse:
-    draft: Mandate = await compile_mandate_from_text(
-        body.prompt, owner_id=body.owner_id, llm=container.llm
+    effective_owner = (
+        identity.user_id
+        if (identity and identity.user_id and body.owner_id == "user-1")
+        else body.owner_id
     )
-    saved = await container.orchestrator.create_mandate_draft(draft, actor=body.owner_id)
+    draft: Mandate = await compile_mandate_from_text(
+        body.prompt, owner_id=effective_owner, llm=container.llm
+    )
+    saved = await container.orchestrator.create_mandate_draft(draft, actor=effective_owner)
     return MandateDraftResponse(mandate=saved, needs_confirm=True)
 
 

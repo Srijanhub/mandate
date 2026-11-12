@@ -1,6 +1,8 @@
 import type { z } from 'zod';
 
-export type LlmProviderName = 'gemini' | 'ollama' | 'mock';
+export type LlmProviderName = 'gemini' | 'mock';
+
+export const GEMINI_ONLY_MODEL = 'gemini-3.8-flash' as const;
 
 export type LlmErrorCode =
   | 'CONFIG_ERROR'
@@ -40,8 +42,7 @@ export interface GenerateStructuredOptions<T> {
 }
 
 const DEFAULT_MODELS: Record<LlmProviderName, string> = {
-  gemini: 'gemini-3.5-flash-lite',
-  ollama: 'llama3.2:3b',
+  gemini: GEMINI_ONLY_MODEL,
   mock: 'mock-deterministic',
 };
 
@@ -55,14 +56,13 @@ export function loadLlmConfigFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): LlmConfig {
   const rawProvider = (env.LLM_PROVIDER ?? 'gemini').trim().toLowerCase();
-  const provider: LlmProviderName =
-    rawProvider === 'ollama' || rawProvider === 'mock' ? rawProvider : 'gemini';
+  const provider: LlmProviderName = rawProvider === 'mock' ? 'mock' : 'gemini';
 
   return {
     provider,
-    model: env.LLM_MODEL?.trim() || DEFAULT_MODELS[provider],
+    // Standardized across the Mandate monorepo on gemini-3.8-flash.
+    model: DEFAULT_MODELS[provider],
     apiKey: env.LLM_API_KEY?.trim() || env.GEMINI_API_KEY?.trim(),
-    baseUrl: env.OLLAMA_BASE_URL?.trim() || 'http://localhost:11434',
     timeoutMs: parsePositiveInt(env.LLM_TIMEOUT_MS, 30_000),
     maxRetries: parsePositiveInt(env.LLM_MAX_RETRIES, 2),
     mockResponseJson: env.LLM_MOCK_JSON,
@@ -88,6 +88,32 @@ type RawCallResult =
   | { ok: true; text: string }
   | { ok: false; retryable: boolean; error: LlmError };
 
+interface GeminiInteractionsPayload {
+  output_text?: string;
+  outputs?: Array<{ type?: string; text?: string }>;
+  steps?: Array<{ type?: string; text?: string }>;
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+}
+
+function extractGeminiResponseText(json: GeminiInteractionsPayload): string | undefined {
+  if (typeof json.output_text === 'string' && json.output_text.trim().length > 0) {
+    return json.output_text;
+  }
+  const outputBlock = json.outputs?.findLast(
+    (item) => typeof item.text === 'string' && item.text.trim().length > 0,
+  );
+  if (outputBlock?.text) {
+    return outputBlock.text;
+  }
+  const stepBlock = json.steps?.findLast(
+    (item) => typeof item.text === 'string' && item.text.trim().length > 0,
+  );
+  if (stepBlock?.text) {
+    return stepBlock.text;
+  }
+  return json.candidates?.[0]?.content?.parts?.[0]?.text;
+}
+
 async function callGeminiRaw(
   systemPrompt: string,
   userPrompt: string,
@@ -106,7 +132,9 @@ async function callGeminiRaw(
     };
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
+  // Match Mandate Python adapter (adapters/llm_gemini/adapter.py):
+  // Gemini Interactions API pinned strictly to gemini-3.8-flash.
+  const url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
   const response = await fetchFn(url, {
     method: 'POST',
     headers: {
@@ -114,12 +142,12 @@ async function callGeminiRaw(
       'x-goog-api-key': config.apiKey,
     },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0,
-      },
+      model: GEMINI_ONLY_MODEL,
+      input: userPrompt,
+      system_instruction: systemPrompt,
+      generation_config: { temperature: 0 },
+      store: false,
+      response_format: { type: 'text', mime_type: 'application/json' },
     }),
     signal,
   });
@@ -144,64 +172,13 @@ async function callGeminiRaw(
     };
   }
 
-  const json = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  const json = (await response.json()) as GeminiInteractionsPayload;
+  const text = extractGeminiResponseText(json);
   if (!text) {
     return {
       ok: false,
       retryable: false,
       error: { code: 'PROVIDER_ERROR', message: 'Gemini returned no text candidate.' },
-    };
-  }
-  return { ok: true, text };
-}
-
-async function callOllamaRaw(
-  systemPrompt: string,
-  userPrompt: string,
-  config: LlmConfig,
-  fetchFn: typeof fetch,
-  signal: AbortSignal,
-): Promise<RawCallResult> {
-  const baseUrl = (config.baseUrl ?? 'http://localhost:11434').replace(/\/+$/, '');
-  const response = await fetchFn(`${baseUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      stream: false,
-      format: 'json',
-      options: { temperature: 0 },
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const bodyText = (await response.text()).slice(0, 300);
-    return {
-      ok: false,
-      retryable: response.status >= 500,
-      error: {
-        code: 'PROVIDER_ERROR',
-        message: `Ollama returned HTTP ${response.status}.`,
-        details: bodyText,
-      },
-    };
-  }
-
-  const json = (await response.json()) as { message?: { content?: string } };
-  const text = json.message?.content;
-  if (!text) {
-    return {
-      ok: false,
-      retryable: false,
-      error: { code: 'PROVIDER_ERROR', message: 'Ollama returned empty message content.' },
     };
   }
   return { ok: true, text };
@@ -227,9 +204,6 @@ async function dispatchProvider(
     }
     return { ok: true, text: config.mockResponseJson };
   }
-  if (config.provider === 'ollama') {
-    return callOllamaRaw(systemPrompt, userPrompt, config, fetchFn, signal);
-  }
   return callGeminiRaw(systemPrompt, userPrompt, config, fetchFn, signal);
 }
 
@@ -237,7 +211,14 @@ export async function generateStructured<T>(
   options: GenerateStructuredOptions<T>,
 ): Promise<LlmResult<T>> {
   const baseConfig = loadLlmConfigFromEnv();
-  const config: LlmConfig = { ...baseConfig, ...options.config };
+  const mergedProvider: LlmProviderName =
+    options.config?.provider === 'mock' ? 'mock' : baseConfig.provider;
+  const config: LlmConfig = {
+    ...baseConfig,
+    ...options.config,
+    provider: mergedProvider,
+    model: mergedProvider === 'gemini' ? GEMINI_ONLY_MODEL : DEFAULT_MODELS.mock,
+  };
   const fetchFn = options.fetchFn ?? fetch;
   const sleepFn = options.sleepFn ?? defaultSleep;
 

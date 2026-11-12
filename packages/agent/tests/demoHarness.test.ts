@@ -113,10 +113,8 @@ describe('H4 intent receipt & S4 3-minute demo harness', () => {
       llmConfig: { provider: 'gemini', apiKey: 'test-key', maxRetries: 0 },
       llmFetchFn: compliantFetch,
     });
-    const parsedRequest = JSON.parse(seenPromptBody) as {
-      contents: Array<{ parts: Array<{ text: string }> }>;
-    };
-    const promptFacts = JSON.parse(parsedRequest.contents[0]!.parts[0]!.text) as {
+    const parsedRequest = JSON.parse(seenPromptBody) as { input: string };
+    const promptFacts = JSON.parse(parsedRequest.input) as {
       displayAmount: string;
     };
     expect(promptFacts.displayAmount).toBe('19.99 USD');

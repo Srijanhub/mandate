@@ -11,41 +11,40 @@ const QuoteSchema = z.object({
 const noSleep = async () => {};
 
 describe('loadLlmConfigFromEnv', () => {
-  it('defaults to gemini and reads env overrides', () => {
+  it('always locks gemini model to gemini-3.8-flash and reads env overrides', () => {
     const cfg = loadLlmConfigFromEnv({
       GEMINI_API_KEY: 'test-secret-key',
+      LLM_MODEL: 'gemini-3.5-flash-lite',
       LLM_TIMEOUT_MS: '8000',
     });
     expect(cfg.provider).toBe('gemini');
-    expect(cfg.model).toBe('gemini-3.5-flash-lite');
+    expect(cfg.model).toBe('gemini-3.8-flash');
     expect(cfg.apiKey).toBe('test-secret-key');
     expect(cfg.timeoutMs).toBe(8000);
   });
 
-  it('switches to ollama via LLM_PROVIDER', () => {
-    const cfg = loadLlmConfigFromEnv({ LLM_PROVIDER: 'ollama' });
-    expect(cfg.provider).toBe('ollama');
-    expect(cfg.model).toBe('llama3.2:3b');
+  it('keeps mock only for offline tests and routes unknown providers to gemini', () => {
+    expect(loadLlmConfigFromEnv({ LLM_PROVIDER: 'mock' }).provider).toBe('mock');
+    expect(loadLlmConfigFromEnv({ LLM_PROVIDER: 'ollama' }).provider).toBe('gemini');
   });
 });
 
 describe('generateStructured', () => {
-  it('succeeds on valid Gemini JSON and keeps API key in header, not URL', async () => {
+  it('calls Interactions API with gemini-3.8-flash and keeps API key in header, not URL', async () => {
     let seenUrl = '';
     let seenHeaderKey: string | null = null;
+    let seenModel = '';
 
     const fakeFetch: typeof fetch = async (input, init) => {
       seenUrl = String(input);
       seenHeaderKey = new Headers(init?.headers).get('x-goog-api-key');
+      const reqBody = JSON.parse(String(init?.body ?? '{}')) as { model?: string };
+      seenModel = reqBody.model ?? '';
       return new Response(
         JSON.stringify({
-          candidates: [
-            {
-              content: {
-                parts: [{ text: '{"merchantId":"giftshop","totalMinor":2500,"currency":"USD"}' }],
-              },
-            },
-          ],
+          id: 'int_123',
+          status: 'completed',
+          outputs: [{ type: 'text', text: '{"merchantId":"giftshop","totalMinor":2500,"currency":"USD"}' }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
@@ -55,36 +54,28 @@ describe('generateStructured', () => {
       systemPrompt: 'Return JSON',
       userPrompt: 'Buy gift',
       schema: QuoteSchema,
-      config: { provider: 'gemini', apiKey: 'super-secret-123', maxRetries: 0 },
+      config: { provider: 'gemini', model: 'gemini-2.5-flash', apiKey: 'super-secret-123', maxRetries: 0 },
       fetchFn: fakeFetch,
       sleepFn: noSleep,
     });
 
+    expect(seenUrl).toBe('https://generativelanguage.googleapis.com/v1beta/interactions');
     expect(seenUrl).not.toContain('super-secret-123');
     expect(seenHeaderKey).toBe('super-secret-123');
+    expect(seenModel).toBe('gemini-3.8-flash');
     expect(result).toEqual({
       ok: true,
       data: { merchantId: 'giftshop', totalMinor: 2500, currency: 'USD' },
       provider: 'gemini',
-      model: 'gemini-3.5-flash-lite',
+      model: 'gemini-3.8-flash',
     });
   });
 
-  it('strips markdown json fences before parsing', async () => {
+  it('strips markdown json fences before parsing output_text', async () => {
     const fakeFetch: typeof fetch = async () =>
       new Response(
         JSON.stringify({
-          candidates: [
-            {
-              content: {
-                parts: [
-                  {
-                    text: '```json\n{"merchantId":"books","totalMinor":1999,"currency":"USD"}\n```',
-                  },
-                ],
-              },
-            },
-          ],
+          output_text: '```json\n{"merchantId":"books","totalMinor":1999,"currency":"USD"}\n```',
         }),
         { status: 200 },
       );
@@ -104,15 +95,19 @@ describe('generateStructured', () => {
     }
   });
 
-  it('supports ollama provider with local /api/chat payload', async () => {
-    let seenUrl = '';
-    const fakeFetch: typeof fetch = async (input) => {
-      seenUrl = String(input);
+  it('retries on transient 503 service_unavailable and extracts steps text', async () => {
+    let calls = 0;
+    const fakeFetch: typeof fetch = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({ error: { code: 'service_unavailable', message: 'high demand' } }),
+          { status: 503 },
+        );
+      }
       return new Response(
         JSON.stringify({
-          message: {
-            content: '{"merchantId":"local_shop","totalMinor":1200,"currency":"USD"}',
-          },
+          steps: [{ type: 'text', text: '{"merchantId":"local_shop","totalMinor":1200,"currency":"USD"}' }],
         }),
         { status: 200 },
       );
@@ -122,12 +117,12 @@ describe('generateStructured', () => {
       systemPrompt: 'Return JSON',
       userPrompt: 'Buy gift',
       schema: QuoteSchema,
-      config: { provider: 'ollama', baseUrl: 'http://localhost:11434', maxRetries: 0 },
+      config: { provider: 'gemini', apiKey: 'secret-503', maxRetries: 1 },
       fetchFn: fakeFetch,
       sleepFn: noSleep,
     });
 
-    expect(seenUrl).toBe('http://localhost:11434/api/chat');
+    expect(calls).toBe(2);
     expect(result.ok).toBe(true);
   });
 

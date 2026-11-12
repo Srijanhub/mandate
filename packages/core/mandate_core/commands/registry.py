@@ -177,6 +177,13 @@ class CommandRegistry:
             allowed_states=None,
             handler=self._handle_why,
         )
+        self.specs["receipt"] = CommandSpec(
+            name="receipt",
+            description="/receipt [case_id] to generate a cryptographic SHA-256 Intent Receipt",
+            args_schema=OptionalIdArgs,
+            allowed_states=None,
+            handler=self._handle_receipt,
+        )
         self.specs["ledger"] = CommandSpec(
             name="ledger",
             description="/ledger [n] to print the last n hash-chained ledger entries",
@@ -338,6 +345,11 @@ class CommandRegistry:
     async def _handle_why(self, args: OptionalIdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
         cid = await self._resolve_case_id(args.case_id)
         return await self.orchestrator.explain_case(cid)
+
+    async def _handle_receipt(self, args: OptionalIdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
+        cid = await self._resolve_case_id(args.case_id)
+        receipt = await self.orchestrator.get_case_receipt(cid)
+        return {"receipt": receipt.model_dump(mode="json")}
 
     async def _handle_ledger(self, args: LedgerCmdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
         entries, total = await self.orchestrator.store.list_ledger(limit=args.limit, sort_dir="desc")

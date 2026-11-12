@@ -29,6 +29,7 @@ SUPPORTED_COMMANDS = frozenset(
         "recheck",
         "status",
         "why",
+        "receipt",
         "ledger",
         "revoke",
         "help",

@@ -1403,6 +1403,63 @@
         }
       }
     },
+    "/cases/{case_id}/receipt": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Get Case Receipt",
+        "operationId": "get_case_receipt_cases__case_id__receipt_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "narrative",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "auto",
+                "deterministic",
+                "llm"
+              ],
+              "type": "string",
+              "default": "auto",
+              "title": "Narrative"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cases/{case_id}/snapshots": {
       "get": {
         "tags": [
@@ -2403,7 +2460,7 @@
     "/demo-lab/reset": {
       "post": {
         "tags": [
-          "Demo Lab (Red Team R1-R9)"
+          "Demo Lab (Red Team R1-R13)"
         ],
         "summary": "Reset Demo Lab",
         "operationId": "reset_demo_lab_demo_lab_reset_post",
@@ -2426,7 +2483,7 @@
     "/demo-lab/tamper-ledger/{seq}": {
       "post": {
         "tags": [
-          "Demo Lab (Red Team R1-R9)"
+          "Demo Lab (Red Team R1-R13)"
         ],
         "summary": "Tamper Ledger Row",
         "description": "Hostile DB tamper simulation for R9 live verification demo.",
@@ -2471,10 +2528,10 @@
     "/demo-lab/run/{scenario}": {
       "post": {
         "tags": [
-          "Demo Lab (Red Team R1-R9)"
+          "Demo Lab (Red Team R1-R13)"
         ],
         "summary": "Run Red Team Scenario",
-        "description": "Deterministic red-team scenarios R1..R9 for live demo & automated verification.",
+        "description": "Deterministic red-team scenarios R1..R13 for live demo & automated verification.",
         "operationId": "run_red_team_scenario_demo_lab_run__scenario__post",
         "parameters": [
           {
@@ -3870,6 +3927,215 @@
           "services"
         ],
         "title": "IntegrationsStatusResponse"
+      },
+      "IntentReceipt": {
+        "properties": {
+          "facts": {
+            "$ref": "#/components/schemas/IntentReceiptFacts"
+          },
+          "narrative": {
+            "type": "string",
+            "title": "Narrative"
+          },
+          "narrative_source": {
+            "type": "string",
+            "enum": [
+              "deterministic-template",
+              "llm-narrated"
+            ],
+            "title": "Narrative Source"
+          },
+          "receipt_hash": {
+            "type": "string",
+            "title": "Receipt Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "facts",
+          "narrative",
+          "narrative_source",
+          "receipt_hash"
+        ],
+        "title": "IntentReceipt",
+        "description": "Cryptographic Intent Receipt with optional leak-checked plain-English narrative."
+      },
+      "IntentReceiptFacts": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "mandate_version": {
+            "type": "integer",
+            "title": "Mandate Version"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "type": "string",
+            "title": "Unit Price"
+          },
+          "total_amount": {
+            "type": "string",
+            "title": "Total Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "seller_id": {
+            "type": "string",
+            "title": "Seller Id"
+          },
+          "seller_verified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Verified"
+          },
+          "payee_id": {
+            "type": "string",
+            "title": "Payee Id"
+          },
+          "latest_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Snapshot Id"
+          },
+          "latest_checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Checkpoint"
+          },
+          "approved_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Snapshot Id"
+          },
+          "paypal_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Order Id"
+          },
+          "paypal_authorization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Authorization Id"
+          },
+          "paypal_capture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paypal Capture Id"
+          },
+          "latest_ledger_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Ledger Seq"
+          },
+          "latest_ledger_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Ledger Hash"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Findings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "mandate_id",
+          "mandate_version",
+          "state",
+          "product_id",
+          "title",
+          "quantity",
+          "unit_price",
+          "total_amount",
+          "currency",
+          "seller_id",
+          "payee_id"
+        ],
+        "title": "IntentReceiptFacts",
+        "description": "Code-verified facts bound into an immutable SHA-256 Intent Receipt."
       },
       "KernelVerifyUrlRequest": {
         "properties": {

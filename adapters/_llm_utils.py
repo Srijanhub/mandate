@@ -1,16 +1,141 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from mandate_core.domain.models import AuditVerdict
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+logger = logging.getLogger("mandate.llm")
+
+T = TypeVar("T")
+
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$", flags=re.DOTALL | re.IGNORECASE)
 _AMOUNT_KEYS = ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount")
+_SECRET_PATTERNS = (
+    re.compile(r"AQ\.[A-Za-z0-9_-]{8,}"),
+    re.compile(r"AIza[A-Za-z0-9_-]{10,}"),
+    re.compile(r"gsk_[A-Za-z0-9_-]{8,}"),
+    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", flags=re.IGNORECASE),
+    re.compile(r"((?:x-goog-api-key|api[_-]?key|authorization)['\":=\s]+)[A-Za-z0-9._-]+", flags=re.IGNORECASE),
+)
+
+
+class LLMTransientError(RuntimeError):
+    """Sanitized exception raised after bounded retries exhaust on transient LLM errors."""
+
+    def __init__(self, message: str, *, error_code: str = "LLM_TRANSIENT_ERROR") -> None:
+        super().__init__(redact_secrets(message))
+        self.error_code = error_code
+
+
+def redact_secrets(text: str) -> str:
+    """Scrub API keys and bearer tokens from LLM error strings and logs."""
+    cleaned = text
+    for pat in _SECRET_PATTERNS:
+        if pat.groups >= 1:
+            cleaned = pat.sub(r"\1[REDACTED]", cleaned)
+        else:
+            cleaned = pat.sub("[REDACTED]", cleaned)
+    return cleaned
+
+
+def _extract_status_code(exc: BaseException) -> int | None:
+    for attr in ("status_code", "code"):
+        val = getattr(exc, attr, None)
+        if isinstance(val, int):
+            return val
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        sc = getattr(resp, "status_code", None)
+        if isinstance(sc, int):
+            return sc
+    return None
+
+
+def classify_llm_error(exc: BaseException) -> tuple[bool, str]:
+    """Classify an LLM exception into (is_retryable, stable_error_code)."""
+    if isinstance(exc, TimeoutError):
+        return True, "LLM_TIMEOUT"
+    cls_name = type(exc).__name__.lower()
+    if "timeout" in cls_name:
+        return True, "LLM_TIMEOUT"
+
+    status = _extract_status_code(exc)
+    if status == 429 or "ratelimit" in cls_name:
+        return True, "LLM_RATE_LIMITED"
+    if status in {502, 503, 504}:
+        return True, "LLM_SERVICE_UNAVAILABLE"
+    if status in {401, 403}:
+        return False, "LLM_AUTH_ERROR"
+
+    msg = str(exc).lower()
+    if "429" in msg or "rate limit" in msg or "too many requests" in msg:
+        return True, "LLM_RATE_LIMITED"
+    if "503" in msg or "service unavailable" in msg or "502" in msg or "504" in msg:
+        return True, "LLM_SERVICE_UNAVAILABLE"
+    if "timed out" in msg or "timeout" in msg:
+        return True, "LLM_TIMEOUT"
+
+    if isinstance(exc, (json.JSONDecodeError, PydanticValidationError)):
+        return False, "LLM_INVALID_JSON"
+
+    return False, f"LLM_{type(exc).__name__.upper()}"
+
+
+async def call_with_retry(
+    op: Callable[[], Awaitable[T]],
+    *,
+    provider: str,
+    max_retries: int = 2,
+    base_delay: float = 0.2,
+    max_delay: float = 2.0,
+    timeout_seconds: float | None = None,
+) -> T:
+    """
+    Execute an async LLM call with bounded exponential backoff on 429 / 503 / timeouts.
+    All warning logs pass through `redact_secrets`.
+    """
+    attempts = max(1, max_retries + 1)
+    for attempt in range(attempts):
+        try:
+            coro = op()
+            if timeout_seconds is not None:
+                return await asyncio.wait_for(coro, timeout=timeout_seconds)
+            return await coro
+        except Exception as exc:
+            retryable, error_code = classify_llm_error(exc)
+            safe_detail = redact_secrets(str(exc))[:240]
+            logger.warning(
+                "LLM call failed provider=%s code=%s attempt=%d/%d detail=%s",
+                provider,
+                error_code,
+                attempt + 1,
+                attempts,
+                safe_detail,
+            )
+            if retryable and attempt < attempts - 1:
+                delay = min(max_delay, base_delay * (2**attempt))
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                continue
+            if retryable:
+                raise LLMTransientError(
+                    f"{provider} exhausted retries ({error_code}): {safe_detail}",
+                    error_code=error_code,
+                ) from exc
+            raise
+    raise LLMTransientError(f"{provider} failed unexpectedly", error_code="LLM_UNKNOWN")
+
+
+class ReceiptSummaryResponse(BaseModel):
+    summary: str
 
 
 class RankingItem(BaseModel):
@@ -63,6 +188,17 @@ def parse_audit_verdict(raw: str) -> AuditVerdict:
         return AuditVerdict.model_validate_json(cleaned)
     except (json.JSONDecodeError, PydanticValidationError, TypeError, ValueError):
         return AuditVerdict(verdict="flag", reasons=["Malformed LLM audit output"])
+
+
+def parse_receipt_narrative(raw: str) -> str | None:
+    """Parse JSON {'summary': ...} receipt summary, returning None on malformed output."""
+    try:
+        cleaned = strip_json_fences(raw)
+        parsed = ReceiptSummaryResponse.model_validate_json(cleaned)
+        text = parsed.summary.strip()
+        return text or None
+    except (json.JSONDecodeError, PydanticValidationError, TypeError, ValueError):
+        return None
 
 
 def safe_int(val: Any, *, default: int, min_value: int = 1, max_value: int = 100) -> int:

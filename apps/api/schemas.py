@@ -11,7 +11,12 @@ from mandate_core.domain.models import (
     Mandate,
     Product,
 )
-from mandate_core.ledger import AgentTrustScore, LedgerVerificationResult
+from mandate_core.ledger import (
+    AgentTrustScore,
+    IntentReceipt,
+    IntentReceiptFacts,
+    LedgerVerificationResult,
+)
 from pydantic import BaseModel, Field
 
 
@@ -244,6 +249,8 @@ __all__ = [
     "HealthResponse",
     "IntegrationServiceStatus",
     "IntegrationsStatusResponse",
+    "IntentReceipt",
+    "IntentReceiptFacts",
     "KernelVerifyUrlRequest",
     "KernelVerifyUrlResponse",
     "LedgerListResponse",

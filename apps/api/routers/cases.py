@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
 from mandate_core.domain.errors import NotFoundError
 from mandate_core.domain.models import CaseState, Proposal
+from mandate_core.ledger import IntentReceipt
 from mandate_core.merger import diff
 from mandate_core.recheck import Checkpoint
 from mandate_core.workflows import build_proposal_from_product
@@ -267,6 +270,15 @@ async def explain_case(
 ) -> WhyResponse:
     data = await container.orchestrator.explain_case(case_id)
     return WhyResponse.model_validate(data)
+
+
+@router.get("/{case_id}/receipt", response_model=IntentReceipt)
+async def get_case_receipt(
+    case_id: str,
+    narrative: Literal["auto", "deterministic", "llm"] = "auto",
+    container: AppContainer = Depends(get_container),
+) -> IntentReceipt:
+    return await container.orchestrator.get_case_receipt(case_id, narrative_mode=narrative)
 
 
 @router.get("/{case_id}/snapshots", response_model=SnapshotListResponse)

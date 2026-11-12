@@ -1,0 +1,23 @@
+{
+  "name": "@mandate/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "spike": "tsx src/spike.ts",
+    "demo:h3": "tsx src/attackSuite.ts",
+    "demo:story": "tsx src/demoHarness.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

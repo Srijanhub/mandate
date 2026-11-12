@@ -12,6 +12,14 @@ from mandate_core.workflows.shopping import (
     sanitize_untrusted_text,
 )
 
+from adapters._llm_utils import (
+    dispatch_shopping_tool,
+    extract_openai_choice_message,
+    parse_audit_verdict,
+    parse_mandate_json,
+    parse_ranking_picks,
+)
+
 
 class AstropodsLLM:
     """
@@ -24,7 +32,7 @@ class AstropodsLLM:
         *,
         gateway_url: str,
         api_key: str,
-        model: str = "gemini-3.8-flash",
+        model: str = "gemini-3.6-flash",
         timeout: float = 15.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -50,7 +58,10 @@ class AstropodsLLM:
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             resp = await client.post(endpoint, headers=self._headers(), json=payload)
             resp.raise_for_status()
-            return dict(resp.json())
+            data = resp.json()
+            if not isinstance(data, dict):
+                raise ValueError("Gateway returned non-object response")
+            return data
 
     async def probe(self) -> dict[str, Any]:
         """Lightweight readiness check for Astropods AI Gateway."""
@@ -92,12 +103,8 @@ class AstropodsLLM:
                 ],
             }
         )
-        content = data["choices"][0]["message"].get("content") or "{}"
-        parsed = dict(json.loads(content))
-        for key in ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount"):
-            if key in parsed and parsed[key] is not None and not isinstance(parsed[key], str):
-                parsed[key] = str(parsed[key])
-        return parsed
+        msg = extract_openai_choice_message(data)
+        return parse_mandate_json(str(msg.get("content") or "{}"))
 
     async def rank_candidates(
         self,
@@ -110,28 +117,30 @@ class AstropodsLLM:
             {"product_id": p.product_id, "title": p.title, "price": p.price.to_str()}
             for p in candidates
         ]
-        data = await self._chat(
-            {
-                "model": self.model,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "Return JSON {'picks': [{'product_id': ..., 'reason': ...}]} using only given IDs.",
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"intent": intent_text, "candidates": payload, "limit": limit}
-                        ),
-                    },
-                ],
-            }
-        )
-        content = data["choices"][0]["message"].get("content") or '{"picks": []}'
-        parsed = json.loads(content)
-        return list(parsed.get("picks", []))[:limit]
+        try:
+            data = await self._chat(
+                {
+                    "model": self.model,
+                    "temperature": 0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Return JSON {'picks': [{'product_id': ..., 'reason': ...}]} using only given IDs.",
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {"intent": intent_text, "candidates": payload, "limit": limit}
+                            ),
+                        },
+                    ],
+                }
+            )
+            msg = extract_openai_choice_message(data)
+            return parse_ranking_picks(str(msg.get("content") or '{"picks": []}'), limit=limit)
+        except (httpx.HTTPError, ValueError):
+            return []
 
     async def audit_snapshot(
         self,
@@ -144,36 +153,38 @@ class AstropodsLLM:
         if heuristic.verdict == "block":
             return heuristic
 
-        data = await self._chat(
-            {
-                "model": self.model,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "Return strict JSON {'verdict': 'ok'|'flag'|'block', 'reasons': [...]}",
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "intent": mandate.intent_text,
-                                "title": snapshot.title,
-                                "untrusted_description": sanitize_untrusted_text(
-                                    untrusted_product_text
-                                )[:400],
-                            }
-                        ),
-                    },
-                ],
-            }
-        )
-        content = (
-            data["choices"][0]["message"].get("content")
-            or '{"verdict": "flag", "reasons": []}'
-        )
-        return AuditVerdict.model_validate_json(content)
+        try:
+            data = await self._chat(
+                {
+                    "model": self.model,
+                    "temperature": 0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Return strict JSON {'verdict': 'ok'|'flag'|'block', 'reasons': [...]}",
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "intent": mandate.intent_text,
+                                    "title": snapshot.title,
+                                    "untrusted_description": sanitize_untrusted_text(
+                                        untrusted_product_text
+                                    )[:400],
+                                }
+                            ),
+                        },
+                    ],
+                }
+            )
+            msg = extract_openai_choice_message(data)
+        except (httpx.HTTPError, ValueError) as exc:
+            return AuditVerdict(verdict="flag", reasons=[f"Gateway audit unavailable: {exc}"])
+
+        content = str(msg.get("content") or '{"verdict": "flag", "reasons": []}')
+        return parse_audit_verdict(content)
 
     async def run_shopping_tools(
         self,
@@ -217,10 +228,13 @@ class AstropodsLLM:
                     "messages": messages,
                 }
             )
-            msg = resp["choices"][0]["message"]
+            try:
+                msg = extract_openai_choice_message(resp)
+            except ValueError:
+                return {"output_text": ""}
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                return {"output_text": msg.get("content") or ""}
+                return {"output_text": str(msg.get("content") or "")}
 
             messages.append(
                 {
@@ -230,25 +244,20 @@ class AstropodsLLM:
                 }
             )
             for tc in tool_calls:
-                fn = tc.get("function") or {}
+                fn = tc.get("function") if isinstance(tc, dict) else {}
+                fn = fn if isinstance(fn, dict) else {}
                 fn_name = str(fn.get("name") or "")
-                args = json.loads(fn.get("arguments") or "{}")
-                if fn_name == "search_products":
-                    res: Any = await search_fn(
-                        str(args.get("query", query)), int(args.get("limit", 5))
-                    )
-                elif fn_name == "propose_purchase":
-                    res = await propose_fn(
-                        str(args.get("product_id", "")),
-                        int(args.get("quantity", 1)),
-                        str(args.get("rationale", "")),
-                    )
-                else:
-                    res = {"error": f"Tool {fn_name!r} is not permitted"}
+                res = await dispatch_shopping_tool(
+                    fn_name,
+                    fn.get("arguments"),
+                    default_query=query,
+                    search_fn=search_fn,
+                    propose_fn=propose_fn,
+                )
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
+                        "tool_call_id": str(tc.get("id", "")) if isinstance(tc, dict) else "",
                         "content": json.dumps(res),
                     }
                 )

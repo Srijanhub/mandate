@@ -11,10 +11,17 @@ from mandate_core.workflows.shopping import (
     sanitize_untrusted_text,
 )
 
+from adapters._llm_utils import (
+    dispatch_shopping_tool,
+    parse_audit_verdict,
+    parse_mandate_json,
+    parse_ranking_picks,
+)
+
 
 class GroqLLM:
     """
-    Backup Groq adapter (`llama-3.3-70b-versatile`, temperature=0, JSON mode)
+    Backup Groq adapter (`openai/gpt-oss-20b`, temperature=0, JSON mode)
     behind the exact same Core LLM port.
     """
 
@@ -22,7 +29,7 @@ class GroqLLM:
         self,
         *,
         api_key: str,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "openai/gpt-oss-20b",
         client: Any = None,
     ) -> None:
         self.model = model
@@ -50,11 +57,9 @@ class GroqLLM:
                 {"role": "user", "content": text},
             ],
         )
-        data = dict(json.loads(resp.choices[0].message.content or "{}"))
-        for key in ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount"):
-            if key in data and data[key] is not None and not isinstance(data[key], str):
-                data[key] = str(data[key])
-        return data
+        choices = getattr(resp, "choices", None) or []
+        content = choices[0].message.content if choices else None
+        return parse_mandate_json(content or "{}")
 
     async def rank_candidates(
         self,
@@ -79,8 +84,9 @@ class GroqLLM:
                 {"role": "user", "content": json.dumps({"intent": intent_text, "candidates": payload, "limit": limit})},
             ],
         )
-        data = json.loads(resp.choices[0].message.content or '{"picks": []}')
-        return list(data.get("picks", []))[:limit]
+        choices = getattr(resp, "choices", None) or []
+        content = choices[0].message.content if choices else None
+        return parse_ranking_picks(content or '{"picks": []}', limit=limit)
 
     async def audit_snapshot(
         self,
@@ -114,7 +120,9 @@ class GroqLLM:
                 },
             ],
         )
-        return AuditVerdict.model_validate_json(resp.choices[0].message.content or '{"verdict": "flag", "reasons": []}')
+        choices = getattr(resp, "choices", None) or []
+        content = choices[0].message.content if choices else None
+        return parse_audit_verdict(content or '{"verdict": "flag", "reasons": []}')
 
     async def run_shopping_tools(
         self,
@@ -156,15 +164,18 @@ class GroqLLM:
                 tools=openai_tools,
                 messages=messages,
             )
-            msg = resp.choices[0].message
+            choices = getattr(resp, "choices", None) or []
+            if not choices:
+                return {"output_text": ""}
+            msg = choices[0].message
             tool_calls = getattr(msg, "tool_calls", None) or []
             if not tool_calls:
-                return {"output_text": msg.content or ""}
+                return {"output_text": getattr(msg, "content", None) or ""}
 
             messages.append(
                 {
                     "role": "assistant",
-                    "content": msg.content or "",
+                    "content": getattr(msg, "content", None) or "",
                     "tool_calls": [
                         {
                             "id": tc.id,
@@ -179,19 +190,14 @@ class GroqLLM:
                 }
             )
             for tc in tool_calls:
-                args = json.loads(tc.function.arguments or "{}")
-                if tc.function.name == "search_products":
-                    res: Any = await search_fn(
-                        str(args.get("query", query)), int(args.get("limit", 5))
-                    )
-                elif tc.function.name == "propose_purchase":
-                    res = await propose_fn(
-                        str(args.get("product_id", "")),
-                        int(args.get("quantity", 1)),
-                        str(args.get("rationale", "")),
-                    )
-                else:
-                    res = {"error": f"Tool {tc.function.name!r} is not permitted"}
+                fn_name = str(getattr(tc.function, "name", "") or "")
+                res = await dispatch_shopping_tool(
+                    fn_name,
+                    getattr(tc.function, "arguments", None),
+                    default_query=query,
+                    search_fn=search_fn,
+                    propose_fn=propose_fn,
+                )
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(res)}
                 )

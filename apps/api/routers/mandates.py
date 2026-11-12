@@ -146,13 +146,16 @@ async def mandates_schedule(
             resources.append(
                 BryntumResource(id=m.owner_id, name=f"Owner {m.owner_id}", role="owner")
             )
+        end_dt = m.deliver_by or m.expires_at
+        if end_dt < m.created_at:
+            end_dt = m.created_at
         events.append(
             BryntumEvent(
                 id=f"{m.mandate_id}-v{m.version}",
                 resourceId=m.owner_id,
                 name=f"[{m.status.value}] {m.max_total.to_str()} — {m.intent_text[:60]}",
                 startDate=m.created_at.isoformat(),
-                endDate=(m.deliver_by or m.expires_at).isoformat(),
+                endDate=end_dt.isoformat(),
                 status=m.status.value,
                 eventColor="green" if m.status.value == "ACTIVE" else "slate",
                 meta={

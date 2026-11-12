@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -41,7 +42,7 @@ async def test_partner_apis_fallback_and_bryntum_timelines() -> None:
             assert status_res.status_code == 200
             names = {s["name"]: s for s in status_res.json()["services"]}
             assert names["paypal"]["mode"] == "mock"
-            assert names["kernel"]["mode"] == "deterministic_fallback"
+            assert names["kernel"]["mode"] == "unconfigured_fallback"
             assert names["elastic"]["mode"] == "deterministic_fallback"
             assert names["render_workflows"]["mode"] == "simulated"
             assert names["bryntum"]["configured"] is True
@@ -87,13 +88,14 @@ async def test_partner_apis_fallback_and_bryntum_timelines() -> None:
             assert led_search.status_code == 200
             assert led_search.json()["total"] >= 1
 
-            # Kernel URL verification fallback + SSRF block
+            # Kernel URL verification fail-closed fallback + SSRF block
             cat_items = (await client.get("/catalog/search", params={"limit": 1})).json()["products"]
             pid = cat_items[0]["product_id"]
             verify_res = await client.post("/catalog/verify-url", json={"product_id": pid})
             assert verify_res.status_code == 200
-            assert verify_res.json()["verified"] is True
-            assert verify_res.json()["mode"] == "deterministic_fallback"
+            assert verify_res.json()["verified"] is False
+            assert verify_res.json()["mode"] == "unconfigured_fallback"
+            assert verify_res.json()["observed_price"] is None
 
             ssrf_res = await client.post(
                 "/catalog/verify-url",
@@ -319,3 +321,301 @@ async def test_partner_apis_live_transports_and_astropods_llm() -> None:
     serverless_probe = await serverless_elastic.probe()
     assert serverless_probe["ok"] is True
     assert serverless_probe["status_code"] == 200
+
+
+@pytest.mark.asyncio
+async def test_security_hardening_lazy_elastic_render_channel3_and_concurrent_probes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import socket
+    from datetime import timedelta
+    from types import SimpleNamespace
+
+    from mandate_core.domain.errors import ValidationError
+
+    from adapters.catalog_channel3 import Channel3Catalog
+    from adapters.errors import ExternalServiceError
+    from adapters.partner_elastic import serialize_ledger_docs
+    from adapters.partner_kernel import validate_public_url
+    from scripts.export_postman import openapi_to_postman
+
+    # 1. Kernel DNS SSRF blocking (IPv4 & IPv6) + redirect SSRF blocking + price parsing
+    def _fake_getaddrinfo_private(host: str, port: Any, **kwargs: Any) -> list[Any]:
+        return [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 443, 0, 0)),
+        ]
+
+    with monkeypatch.context() as mp:
+        mp.setattr(socket, "getaddrinfo", _fake_getaddrinfo_private)
+        with pytest.raises(ValidationError):
+            validate_public_url("https://rebind.attacker.example/item")
+
+    def redirect_kernel_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/browsers":
+            return httpx.Response(201, json={"session_id": "s1", "cdp_ws_url": "wss://k.test/cdp"})
+        if request.method == "DELETE" and request.url.path == "/browsers/s1":
+            return httpx.Response(204)
+        if request.url.host == "hop.example.com":
+            return httpx.Response(302, headers={"Location": "http://127.0.0.1:8000/admin"})
+        if request.url.host == "priced.example.com":
+            return httpx.Response(
+                200,
+                text=(
+                    '<html><head><title>Soy Candle</title>'
+                    '<meta property="product:price:amount" content="38.50">'
+                    '<meta property="product:price:currency" content="USD">'
+                    "</head><body>ok</body></html>"
+                ),
+            )
+        return httpx.Response(404)
+
+    kern = KernelVerifier(
+        api_key="kern-key",
+        transport=httpx.MockTransport(redirect_kernel_handler),
+    )
+    with pytest.raises(ValidationError):
+        await kern.verify_merchant_url("https://hop.example.com/go")
+
+    priced = await kern.verify_merchant_url(
+        "https://priced.example.com/item", expected_price="99.99 USD"
+    )
+    assert priced["verified"] is True
+    assert "direct_http_metadata_fetch" in priced["checks"]
+    assert priced["observed_price"] == "38.50 USD"  # Parsed from page, not expected_price
+
+    # 2. Auth guard on /integrations/status?probe=true + concurrent timeout handling
+    class _SlowKernel(KernelVerifier):
+        async def probe(self) -> dict[str, Any]:
+            await asyncio.sleep(4.0)
+            return {"configured": True, "ok": True, "mode": "live"}
+
+    auth_settings = Settings(
+        _env_file=None,
+        database_url="sqlite+aiosqlite:///:memory:",
+        paypal_mode="mock",
+        catalog_provider="mock",
+        llm_provider="deterministic",
+        require_auth=True,
+        api_user_token="user-secret",
+        api_admin_token="admin-secret",
+        recheck_poll_interval_seconds=3600,
+    )
+    slow_container = build_container(
+        auth_settings,
+        kernel=_SlowKernel(api_key="slow-kern"),
+    )
+    auth_app = create_app(auth_settings, container_override=slow_container)
+    async with auth_app.router.lifespan_context(auth_app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=auth_app), base_url="http://test"
+        ) as client:
+            r_public = await client.get("/integrations/status")
+            assert r_public.status_code == 200
+            r_unauth_probe = await client.get("/integrations/status", params={"probe": True})
+            assert r_unauth_probe.status_code == 401
+            r_authed_probe = await client.get(
+                "/integrations/status",
+                params={"probe": True},
+                headers={"Authorization": "Bearer user-secret"},
+            )
+            assert r_authed_probe.status_code == 200
+            probed_map = {s["name"]: s for s in r_authed_probe.json()["services"]}
+            assert probed_map["kernel"]["live_ok"] is False
+
+    # 3. Render slug/run_id traversal rejection + HTTP >= 400 -> ExternalServiceError (502)
+    def failing_render_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/tasks/bad-task/runs":
+            return httpx.Response(404, json={"message": "Not found"})
+        return httpx.Response(500)
+
+    rnd = RenderWorkflowsClient(
+        api_key="rnd-key",
+        transport=httpx.MockTransport(failing_render_handler),
+    )
+    with pytest.raises(ValidationError):
+        await rnd.trigger_task(task_slug="../etc/passwd")
+    with pytest.raises(ValidationError):
+        await rnd.get_run("../../admin")
+    with pytest.raises(ExternalServiceError):
+        await rnd.trigger_task(task_slug="bad-task")
+
+    # 4. Lazy Elastic fallback + JSON ledger payload + Astropods resilience + Channel3 empty query
+    catalog_calls: list[str] = []
+
+    class _CountingCatalog:
+        async def search(self, query: str, **kwargs: Any) -> list[Product]:
+            catalog_calls.append(query)
+            return []
+
+        async def get(self, product_id: str) -> Product | None:
+            return None
+
+    live_es = ElasticSearchAdapter(
+        url="https://es.test",
+        api_key="es-key",
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"hits": {"hits": []}})
+        ),
+    )
+    lazy_settings = Settings(
+        _env_file=None,
+        database_url="sqlite+aiosqlite:///:memory:",
+        paypal_mode="mock",
+        llm_provider="deterministic",
+        recheck_poll_interval_seconds=3600,
+    )
+    lazy_container = build_container(
+        lazy_settings,
+        catalog=_CountingCatalog(),
+        elastic=live_es,
+    )
+    lazy_app = create_app(lazy_settings, container_override=lazy_container)
+    async with lazy_app.router.lifespan_context(lazy_app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=lazy_app), base_url="http://test"
+        ) as client:
+            r_cat = await client.get("/catalog/semantic-search", params={"query": "candle"})
+            assert r_cat.status_code == 200
+            assert catalog_calls == []
+
+            # Bryntum schedule clamp endDate >= startDate even when deliver_by < created_at
+            now = utcnow()
+            past_mandate = Mandate(
+                intent_text="past delivery test",
+                max_total=Money.of("25.00", "USD"),
+                deliver_by=now - timedelta(days=2),
+                expires_at=now + timedelta(hours=1),
+                created_at=now,
+                updated_at=now,
+            )
+            await lazy_container.store.save_mandate(past_mandate)
+            sched = (await client.get("/mandates/schedule")).json()
+            assert sched["events"][0]["endDate"] >= sched["events"][0]["startDate"]
+
+    led_docs = serialize_ledger_docs(
+        [
+            SimpleNamespace(
+                seq=1,
+                event_type="TEST",
+                case_id="c1",
+                mandate_id="m1",
+                actor="user",
+                payload={"nested": True, "amount": "10.00"},
+                hash="h1",
+                created_at=utcnow(),
+            )
+        ]
+    )
+    assert led_docs[0][1]["payload_json"] == '{"nested": true, "amount": "10.00"}'
+
+    # Channel3 does not rewrite "" to "gift"
+    seen_ch3_queries: list[str] = []
+
+    class _FakeCh3Client:
+        class products:
+            @staticmethod
+            def search(**kwargs: Any) -> list[Any]:
+                seen_ch3_queries.append(str(kwargs.get("query")))
+                if kwargs.get("query") == "":
+                    raise ValueError("empty query rejected")
+                return []
+
+    ch3 = Channel3Catalog(client=_FakeCh3Client())
+    assert await ch3.search("") == []
+    assert seen_ch3_queries == [""]
+
+    # Astropods malformed choices, fenced JSON, and dict tool arguments
+    bad_astro = AstropodsLLM(
+        gateway_url="https://astro.test",
+        api_key="k",
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"choices": []})),
+    )
+    assert await bad_astro.rank_candidates(intent_text="x", candidates=[]) == []
+    snap = CaseSnapshot(
+        case_id="c2",
+        checkpoint="C3",
+        mandate_id="m2",
+        mandate_version=1,
+        product_id="p1",
+        title="Item",
+        quantity=1,
+        unit_price=Money.of("10.00", "USD"),
+        total_amount=Money.of("10.00", "USD"),
+        seller_id="s1",
+        seller_name="Seller",
+        seller_verified=True,
+        payee_id="P1",
+        in_stock=True,
+        category="gifts",
+    )
+    m_obj = Mandate(intent_text="x", max_total=Money.of("20.00", "USD"), expires_at=utcnow())
+    assert (await bad_astro.audit_snapshot(mandate=m_obj, snapshot=snap, untrusted_product_text="ok")).verdict == "flag"
+
+    # Astropods dict + malformed tool_call arguments
+    astro_turns = {"n": 0}
+    seen_tool_results: list[str] = []
+
+    def astro_tool_handler(request: httpx.Request) -> httpx.Response:
+        astro_turns["n"] += 1
+        body = json.loads(request.content.decode("utf-8"))
+        for m in body.get("messages", []):
+            if m.get("role") == "tool":
+                seen_tool_results.append(str(m.get("content", "")))
+        if astro_turns["n"] == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "tc-dict",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "search_products",
+                                            "arguments": {"query": "candle", "limit": 2},
+                                        },
+                                    },
+                                    {
+                                        "id": "tc-badjson",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "propose_purchase",
+                                            "arguments": "{invalid json",
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Finished"}}]})
+
+    astro_tools = AstropodsLLM(
+        gateway_url="https://astro.test",
+        api_key="k",
+        transport=httpx.MockTransport(astro_tool_handler),
+    )
+
+    async def _mock_search(q: str, lim: int) -> list[dict[str, Any]]:
+        return [{"product_id": "p1", "title": q}]
+
+    async def _mock_propose(pid: str, qty: int, rat: str) -> dict[str, Any]:
+        return {"case_id": "c1"}
+
+    tool_out = await astro_tools.run_shopping_tools(
+        query="candle", mandate=m_obj, search_fn=_mock_search, propose_fn=_mock_propose
+    )
+    assert tool_out["output_text"] == "Finished"
+    assert any("Invalid JSON tool arguments" in r for r in seen_tool_results)
+
+    # Postman export includes collection auth + non-empty schema examples
+    collection = openapi_to_postman(lazy_app.openapi())
+    assert collection["auth"]["type"] == "bearer"
+    post_items = [it for it in collection["item"] if it["request"]["method"] == "POST" and "body" in it["request"]]
+    assert post_items
+    assert any(it["request"]["body"]["raw"] != "{}" for it in post_items)

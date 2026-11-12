@@ -6,6 +6,8 @@ from typing import Any
 
 import httpx
 
+from adapters.errors import ExternalServiceError
+
 
 def _tokenize(text: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", text.lower()) if t}
@@ -64,7 +66,7 @@ def serialize_ledger_docs(entries: list[Any]) -> list[tuple[str, dict[str, Any]]
                 "case_id": e.case_id or "",
                 "mandate_id": e.mandate_id or "",
                 "actor": e.actor,
-                "payload_json": str(e.payload),
+                "payload_json": json.dumps(e.payload, default=str),
                 "hash": e.hash,
                 "created_at": e.created_at.isoformat(),
             },
@@ -160,27 +162,36 @@ class ElasticSearchAdapter:
             lines.append(json.dumps(doc))
         ndjson = "\n".join(lines) + "\n"
 
-        async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
-            resp = await client.post(
-                f"{self.url}/{index_name}/_bulk?refresh=wait_for",
-                headers=self._headers("application/x-ndjson"),
-                content=ndjson,
-            )
-            if resp.status_code >= 400:
-                return {
-                    "mode": "live",
-                    "index": index_name,
-                    "indexed": 0,
-                    "errors": True,
-                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
-                }
-            data = resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
+                resp = await client.post(
+                    f"{self.url}/{index_name}/_bulk?refresh=wait_for",
+                    headers=self._headers("application/x-ndjson"),
+                    content=ndjson,
+                )
+        except httpx.HTTPError as exc:
             return {
                 "mode": "live",
                 "index": index_name,
-                "indexed": len(docs),
-                "errors": bool(data.get("errors", False)),
+                "indexed": 0,
+                "errors": True,
+                "error": str(exc)[:200],
             }
+        if resp.status_code >= 400:
+            return {
+                "mode": "live",
+                "index": index_name,
+                "indexed": 0,
+                "errors": True,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+        data = resp.json()
+        return {
+            "mode": "live",
+            "index": index_name,
+            "indexed": len(docs),
+            "errors": bool(data.get("errors", False)),
+        }
 
     async def search(
         self,
@@ -222,12 +233,17 @@ class ElasticSearchAdapter:
                     }
                 ),
             }
-            async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
-                resp = await client.post(
-                    f"{self.url}/{index_name}/_search",
-                    headers=self._headers(),
-                    json=body,
-                )
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
+                    resp = await client.post(
+                        f"{self.url}/{index_name}/_search",
+                        headers=self._headers(),
+                        json=body,
+                    )
+            except httpx.HTTPError as exc:
+                if fallback_docs is None:
+                    raise ExternalServiceError(f"Elastic search request failed: {exc}") from exc
+            else:
                 if resp.status_code < 400:
                     raw_hits = resp.json().get("hits", {}).get("hits", [])
                     hits = [
@@ -239,6 +255,11 @@ class ElasticSearchAdapter:
                         for h in raw_hits[:limit]
                     ]
                     return {"mode": "live", "index": index_name, "total": len(hits), "hits": hits}
+                if fallback_docs is None and resp.status_code not in {404}:
+                    raise ExternalServiceError(
+                        f"Elastic search failed (HTTP {resp.status_code})",
+                        details={"index": index_name, "status_code": resp.status_code},
+                    )
 
         pool = (
             list(fallback_docs)

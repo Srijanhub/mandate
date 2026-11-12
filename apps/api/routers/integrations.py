@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from mandate_core.domain.errors import NotFoundError
 
 from adapters.llm_astropods import AstropodsLLM
@@ -38,12 +40,42 @@ def integration_flags(c: AppContainer) -> dict[str, bool]:
     }
 
 
-@router.get("/status", response_model=IntegrationsStatusResponse)
+async def _require_auth_when_probing(
+    request: Request,
+    probe: bool = False,
+    container: AppContainer = Depends(get_container),
+) -> None:
+    if probe:
+        await require_user_auth(request, container)
+
+
+async def _bounded_probe(coro: Awaitable[dict[str, Any]], *, timeout: float = 3.0) -> dict[str, Any]:
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+
+async def _probe_paypal(container: AppContainer, *, enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        return {}
+    tok_fn = getattr(container.payment, "_get_access_token", None)
+    if not callable(tok_fn):
+        return {}
+    await tok_fn()
+    return {"ok": True}
+
+
+@router.get(
+    "/status",
+    response_model=IntegrationsStatusResponse,
+    dependencies=[Depends(_require_auth_when_probing)],
+)
 async def integrations_status(
     probe: bool = False,
     container: AppContainer = Depends(get_container),
 ) -> IntegrationsStatusResponse:
-    """Report configuration status (and optional live connectivity probe) for all partner APIs."""
+    """Report configuration status (and optional concurrent live probe) for all partner APIs."""
     s = container.settings
     flags = integration_flags(container)
 
@@ -54,19 +86,39 @@ async def integrations_status(
     paypal_probe_ok: bool | None = None
 
     if probe:
-        kernel_probe = await container.kernel.probe()
-        elastic_probe = await container.elastic.probe()
-        render_probe = await container.render_workflows.probe()
-        if isinstance(container.llm, AstropodsLLM):
-            astro_probe = await container.llm.probe()
+        astro_client = (
+            container.llm
+            if isinstance(container.llm, AstropodsLLM)
+            else (
+                AstropodsLLM(
+                    gateway_url=s.astro_gateway_url,
+                    api_key=s.astro_gateway_api_key,
+                    model=s.astro_model,
+                )
+                if flags["astropods"]
+                else None
+            )
+        )
+        astro_coro = (
+            astro_client.probe()
+            if astro_client is not None
+            else asyncio.sleep(0, result={})
+        )
+        results = await asyncio.gather(
+            _bounded_probe(container.kernel.probe()),
+            _bounded_probe(container.elastic.probe()),
+            _bounded_probe(container.render_workflows.probe()),
+            _bounded_probe(astro_coro),
+            _bounded_probe(_probe_paypal(container, enabled=flags["paypal"])),
+            return_exceptions=True,
+        )
+        kernel_probe = results[0] if isinstance(results[0], dict) else {"ok": False}
+        elastic_probe = results[1] if isinstance(results[1], dict) else {"ok": False}
+        render_probe = results[2] if isinstance(results[2], dict) else {"ok": False}
+        astro_probe = results[3] if isinstance(results[3], dict) else {"ok": False}
+        paypal_probe = results[4] if isinstance(results[4], dict) else {}
         if flags["paypal"]:
-            try:
-                tok_fn = getattr(container.payment, "_get_access_token", None)
-                if callable(tok_fn):
-                    await tok_fn()
-                    paypal_probe_ok = True
-            except Exception:
-                paypal_probe_ok = False
+            paypal_probe_ok = bool(paypal_probe.get("ok", False))
 
     services = [
         IntegrationServiceStatus(
@@ -104,7 +156,7 @@ async def integrations_status(
         IntegrationServiceStatus(
             name="kernel",
             configured=flags["kernel"],
-            mode="live" if flags["kernel"] else "deterministic_fallback",
+            mode="live" if flags["kernel"] else "unconfigured_fallback",
             live_ok=kernel_probe.get("ok") if probe else None,
             details={"endpoint": "POST /catalog/verify-url"},
         ),

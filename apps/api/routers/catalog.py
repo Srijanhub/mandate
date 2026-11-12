@@ -78,13 +78,16 @@ async def semantic_search_catalog(
     container: AppContainer = Depends(get_container),
 ) -> ElasticSearchResponse:
     """Elastic hybrid/fuzzy search over catalog products (with deterministic fallback)."""
-    products = await container.catalog.search("", limit=100)
+    fallback_docs: list[tuple[str, dict[str, Any]]] | None = None
+    if not container.elastic.is_live:
+        products = await container.catalog.search("", limit=100)
+        fallback_docs = serialize_catalog_docs(products)
     res = await container.elastic.search(
         "catalog",
         query=query,
         fields=["title^3", "description^2", "category", "seller_name"],
         limit=max(1, min(limit, 50)),
-        fallback_docs=serialize_catalog_docs(products),
+        fallback_docs=fallback_docs,
     )
     return ElasticSearchResponse.model_validate(res)
 

@@ -12,16 +12,14 @@ from mandate_core.workflows.shopping import (
     heuristic_injection_audit,
     sanitize_untrusted_text,
 )
-from pydantic import BaseModel
 
-
-class _RankingItem(BaseModel):
-    product_id: str
-    reason: str
-
-
-class _RankingResponse(BaseModel):
-    picks: list[_RankingItem]
+from adapters._llm_utils import (
+    RankingResponse,
+    dispatch_shopping_tool,
+    parse_audit_verdict,
+    parse_mandate_json,
+    parse_ranking_picks,
+)
 
 
 class GeminiLLM:
@@ -72,7 +70,7 @@ class GeminiLLM:
                         response_schema=schema,
                     ),
                 )
-                return resp.text or default_text
+                return getattr(resp, "text", None) or default_text
 
             return await asyncio.to_thread(_call_models)
 
@@ -89,7 +87,7 @@ class GeminiLLM:
                     "schema": schema,
                 },
             )
-            return interaction.output_text or default_text
+            return getattr(interaction, "output_text", None) or default_text
 
         return await asyncio.to_thread(_call_interactions)
 
@@ -105,7 +103,7 @@ class GeminiLLM:
             schema=CompiledMandateSchema.model_json_schema(),
             default_text="{}",
         )
-        return dict(json.loads(raw))
+        return parse_mandate_json(raw)
 
     async def rank_candidates(
         self,
@@ -133,11 +131,10 @@ class GeminiLLM:
             user_input=json.dumps(
                 {"intent": intent_text, "candidates": candidate_payload, "limit": limit}
             ),
-            schema=_RankingResponse.model_json_schema(),
+            schema=RankingResponse.model_json_schema(),
             default_text='{"picks": []}',
         )
-        parsed = _RankingResponse.model_validate_json(raw)
-        return [{"product_id": p.product_id, "reason": p.reason} for p in parsed.picks[:limit]]
+        return parse_ranking_picks(raw, limit=limit)
 
     async def audit_snapshot(
         self,
@@ -168,7 +165,7 @@ class GeminiLLM:
             schema=AuditVerdict.model_json_schema(),
             default_text='{"verdict": "flag", "reasons": ["Empty response"]}',
         )
-        return AuditVerdict.model_validate_json(raw)
+        return parse_audit_verdict(raw)
 
     async def run_shopping_tools(
         self,
@@ -224,20 +221,14 @@ class GeminiLLM:
                     contents.append(resp.candidates[0].content)
                 fn_parts: list[Any] = []
                 for fc in fcalls:
-                    name = str(fc.name)
-                    args = dict(fc.args or {})
-                    if name == "search_products":
-                        res: Any = await search_fn(
-                            str(args.get("query", query)), int(args.get("limit", 5))
-                        )
-                    elif name == "propose_purchase":
-                        res = await propose_fn(
-                            str(args.get("product_id", "")),
-                            int(args.get("quantity", 1)),
-                            str(args.get("rationale", "")),
-                        )
-                    else:
-                        res = {"error": f"Tool {name!r} is not permitted"}
+                    name = str(getattr(fc, "name", "") or "")
+                    res = await dispatch_shopping_tool(
+                        name,
+                        getattr(fc, "args", None),
+                        default_query=query,
+                        search_fn=search_fn,
+                        propose_fn=propose_fn,
+                    )
                     fn_parts.append(
                         types.Part.from_function_response(name=name, response={"result": res})
                     )
@@ -268,22 +259,14 @@ class GeminiLLM:
             for step in steps:
                 if getattr(step, "type", None) != "function_call":
                     continue
-                name = step.name
-                args = step.arguments or {}
-                if name == "search_products":
-                    res = await search_fn(
-                        str(args.get("query", query)),
-                        int(args.get("limit", 5)),
-                    )
-                elif name == "propose_purchase":
-                    res = await propose_fn(
-                        str(args.get("product_id", "")),
-                        int(args.get("quantity", 1)),
-                        str(args.get("rationale", "")),
-                    )
-                else:
-                    res = {"error": f"Tool {name!r} is not permitted"}
-
+                name = str(getattr(step, "name", "") or "")
+                res = await dispatch_shopping_tool(
+                    name,
+                    getattr(step, "arguments", None),
+                    default_query=query,
+                    search_fn=search_fn,
+                    propose_fn=propose_fn,
+                )
                 function_results.append(
                     {
                         "type": "function_result",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from mandate_core.ledger import compute_agent_trust_score
 
@@ -53,13 +55,16 @@ async def search_ledger(
     container: AppContainer = Depends(get_container),
 ) -> ElasticSearchResponse:
     """Elastic search over audit ledger entries (with deterministic fallback)."""
-    entries = await container.store.iter_all_ledger()
+    fallback_docs: list[tuple[str, dict[str, Any]]] | None = None
+    if not container.elastic.is_live:
+        entries = await container.store.iter_all_ledger()
+        fallback_docs = serialize_ledger_docs(entries)
     res = await container.elastic.search(
         "ledger",
         query=query,
         fields=["event_type^3", "case_id^2", "mandate_id^2", "actor", "payload_json"],
         limit=max(1, min(limit, 100)),
-        fallback_docs=serialize_ledger_docs(entries),
+        fallback_docs=fallback_docs,
     )
     return ElasticSearchResponse.model_validate(res)
 

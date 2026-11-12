@@ -27,13 +27,13 @@ class Settings(BaseSettings):
 
     llm_provider: str = "gemini"  # gemini | groq | astropods | deterministic
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.6-flash"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
 
     astro_gateway_url: str = ""
     astro_gateway_api_key: str = ""
-    astro_model: str = "gemini-3.8-flash"
+    astro_model: str = "gemini-3.6-flash"
 
     catalog_provider: str = "mock"  # mock | channel3
     channel3_api_key: str = ""

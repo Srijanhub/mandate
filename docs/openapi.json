@@ -2007,7 +2007,7 @@
           "Integrations"
         ],
         "summary": "Integrations Status",
-        "description": "Report configuration status (and optional live connectivity probe) for all partner APIs.",
+        "description": "Report configuration status (and optional concurrent live probe) for all partner APIs.",
         "operationId": "integrations_status_integrations_status_get",
         "parameters": [
           {

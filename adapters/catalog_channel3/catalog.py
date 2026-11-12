@@ -108,7 +108,7 @@ class Channel3Catalog:
         if filters and filters.get("category_ids"):
             ch3_filters["category_ids"] = filters["category_ids"]
 
-        effective_query = query.strip() or "gift"
+        effective_query = query.strip()
 
         def _call() -> list[Any]:
             kwargs: dict[str, Any] = {"query": effective_query, "limit": limit}
@@ -125,7 +125,14 @@ class Channel3Catalog:
                 return list(data_attr)[:limit]
             return list(itertools.islice(res, limit))
 
-        raw_items = await asyncio.to_thread(_call)
+        try:
+            raw_items = await asyncio.to_thread(_call)
+        except Exception:
+            # Channel3's backend rejects an empty query when no filters/image/page_token are given;
+            # return cached items instead of substituting a synthetic default query.
+            if not effective_query:
+                return list(self._cache.values())[:limit]
+            raise
         mapped = [_map_channel3_product(item) for item in raw_items]
         for p in mapped:
             self._cache[p.product_id] = p

@@ -972,6 +972,48 @@
       }
     },
     {
+      "name": "Get Case Receipt",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{apiToken}}",
+            "disabled": true,
+            "description": "Alternative auth header (collection uses Bearer {{apiToken}} by default)."
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/:case_id/receipt",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            ":case_id",
+            "receipt"
+          ],
+          "query": [
+            {
+              "key": "narrative",
+              "value": "auto",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "case_id",
+              "value": "case_sample_001"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "List Case Snapshots",
       "request": {
         "method": "GET",

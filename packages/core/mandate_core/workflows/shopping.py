@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import html
 import re
 from datetime import timedelta
+from html.parser import HTMLParser
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -49,15 +51,132 @@ class CompiledMandateSchema(BaseModel):
     expires_in_hours: int = Field(default=24, ge=1, le=720)
 
 
+_VOID_HTML_TAGS = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+_BLOCK_HTML_TAGS = frozenset({"p", "div", "li", "br", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article"})
+_HIDDEN_CONTAINER_TAGS = frozenset({"script", "style", "noscript", "template", "head"})
+_HIDDEN_STYLE_RE = re.compile(
+    r"(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\.0+)?(?:\s*;|$)|font-size\s*:\s*0(?:px|em|rem|%)?(?:\s*;|$)|width\s*:\s*0(?:px)?(?:\s*;|$)|height\s*:\s*0(?:px)?(?:\s*;|$)|clip\s*:\s*rect\s*\(|text-indent\s*:\s*-\d{3,}|(?:left|top)\s*:\s*-\d{3,})",
+    flags=re.IGNORECASE,
+)
+_HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
+_SCRIPT_STYLE_RE = re.compile(
+    r"<(script|style|noscript|template)\b[^>]*>[\s\S]*?(?:</\1\s*>|$)",
+    flags=re.IGNORECASE,
+)
+_SECRET_IN_MSG_RE = re.compile(
+    r"(AQ\.[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{10,}|gsk_[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]+)"
+)
+
+
+def _is_hidden_attrs(attrs: list[tuple[str, str | None]]) -> bool:
+    for raw_name, raw_val in attrs:
+        name = raw_name.strip().lower()
+        val = (raw_val or "").strip().lower()
+        if name == "hidden":
+            return True
+        if name == "aria-hidden" and val in {"true", "1", "yes"}:
+            return True
+        if name == "style" and _HIDDEN_STYLE_RE.search(val):
+            return True
+    return False
+
+
+class _VisibleTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._skip_stack: list[str] = []
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t in _VOID_HTML_TAGS:
+            if t == "br" and not self._skip_stack:
+                self._chunks.append("\n")
+            return
+        if self._skip_stack:
+            self._skip_stack.append(t)
+            return
+        if t in _HIDDEN_CONTAINER_TAGS or _is_hidden_attrs(attrs):
+            self._skip_stack.append(t)
+            return
+        if t in _BLOCK_HTML_TAGS and self._chunks and not self._chunks[-1].endswith("\n"):
+            self._chunks.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t == "br" and not self._skip_stack:
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in _VOID_HTML_TAGS:
+            return
+        if self._skip_stack:
+            if t in self._skip_stack:
+                while self._skip_stack:
+                    popped = self._skip_stack.pop()
+                    if popped == t:
+                        break
+            return
+        if t in _BLOCK_HTML_TAGS and self._chunks and not self._chunks[-1].endswith("\n"):
+            self._chunks.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(html.unescape(f"&{name};"))
+
+    def handle_charref(self, name: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(html.unescape(f"&#{name};"))
+
+    def get_text(self) -> str:
+        return "".join(self._chunks)
+
+
 def sanitize_untrusted_text(raw: str) -> str:
-    """Neutralize leading slash commands & mark product text strictly as untrusted data."""
+    """
+    Strip hidden HTML/CSS prompt-injection vectors (<script>, <style>, display:none,
+    aria-hidden="true", comments) and neutralize leading slash commands before untrusted
+    product text reaches any LLM.
+    """
+    without_comments = _HTML_COMMENT_RE.sub("", raw)
+    without_scripts = _SCRIPT_STYLE_RE.sub("", without_comments)
+    parser = _VisibleTextExtractor()
+    parser.feed(without_scripts)
+    parser.close()
+    visible = parser.get_text()
+    visible = re.sub(r"<[^>]+>", "", visible)
+
     lines: list[str] = []
-    for line in raw.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("/"):
-            lines.append(f"[untrusted-text] {stripped}")
+    for line in visible.splitlines():
+        compact = re.sub(r"[ \t]+", " ", line).strip()
+        if not compact:
+            continue
+        if compact.startswith("/"):
+            lines.append(f"[untrusted-text] {compact}")
         else:
-            lines.append(line)
+            lines.append(compact)
     return "\n".join(lines)
 
 
@@ -354,7 +473,7 @@ def build_proposal_from_product(
 
 def heuristic_injection_audit(untrusted_text: str, snapshot: CaseSnapshot) -> AuditVerdict:
     """Deterministic fallback scanner for prompt injection patterns in product descriptions."""
-    lower = f"{untrusted_text} {snapshot.title}".lower()
+    lower = f"{untrusted_text} {html.unescape(untrusted_text)} {snapshot.title}".lower()
     hits = [m for m in INJECTION_MARKERS if m in lower]
     if hits:
         return AuditVerdict(
@@ -395,6 +514,43 @@ SHOPPING_AGENT_TOOLS: list[dict[str, Any]] = [
 ]
 
 
+def _infer_llm_provider(llm: Any | None) -> str:
+    if llm is None:
+        return "deterministic"
+    explicit = getattr(llm, "provider_name", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().lower()
+    name = type(llm).__name__.lower()
+    if "gemini" in name:
+        return "gemini"
+    if "groq" in name:
+        return "groq"
+    if "astro" in name:
+        return "astropods"
+    return name
+
+
+def _classify_llm_error_code(exc: BaseException) -> str:
+    explicit = getattr(exc, "error_code", None) or getattr(exc, "code", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().upper()
+    if isinstance(exc, TimeoutError):
+        return "LLM_TIMEOUT"
+    status = getattr(exc, "status_code", None)
+    if status == 429:
+        return "LLM_RATE_LIMITED"
+    if status in {502, 503, 504}:
+        return "LLM_SERVICE_UNAVAILABLE"
+    msg = str(exc).lower()
+    if "429" in msg or "rate limit" in msg:
+        return "LLM_RATE_LIMITED"
+    if "503" in msg or "service unavailable" in msg or "unavailable" in msg:
+        return "LLM_SERVICE_UNAVAILABLE"
+    if "timeout" in msg or "timed out" in msg:
+        return "LLM_TIMEOUT"
+    return f"LLM_{type(exc).__name__.upper()}"
+
+
 async def run_shopping_agent(
     *,
     mandate: Mandate,
@@ -410,6 +566,24 @@ async def run_shopping_agent(
     """
     proposed_cases: list[dict[str, Any]] = []
     tool_trace: list[dict[str, Any]] = []
+    llm_provider = _infer_llm_provider(llm)
+    trace_ctx: dict[str, Any] = {
+        "provider": llm_provider if llm is not None else "deterministic",
+        "fallback_used": False,
+        "error_code": None,
+    }
+
+    def _record_step(action: str, **extra: Any) -> None:
+        tool_trace.append(
+            {
+                "step": len(tool_trace) + 1,
+                "action": action,
+                "provider": trace_ctx["provider"],
+                "fallback_used": trace_ctx["fallback_used"],
+                "error_code": trace_ctx["error_code"],
+                **extra,
+            }
+        )
 
     async def _search_products(search_query: str, limit: int = 10) -> list[dict[str, Any]]:
         safe_limit = max(1, min(int(limit), 10))
@@ -433,7 +607,12 @@ async def run_shopping_agent(
             }
             for o in options
         ]
-        tool_trace.append({"tool": "search_products", "query": search_query, "count": len(results)})
+        _record_step(
+            "search_products",
+            tool="search_products",
+            query=search_query,
+            count=len(results),
+        )
         return results
 
     async def _propose_purchase(
@@ -452,10 +631,11 @@ async def run_shopping_agent(
         case = await orchestrator.submit_proposal(prop, actor="shopping-agent")
         summary = {"case_id": case.case_id, "state": case.state.value, "product_id": product_id}
         proposed_cases.append(summary)
-        tool_trace.append({"tool": "propose_purchase", **summary})
+        _record_step("propose_purchase", tool="propose_purchase", **summary)
         return summary
 
     runner = getattr(llm, "run_shopping_tools", None) if llm is not None else None
+    fallback_error_code: str | None = None
     if callable(runner):
         try:
             await runner(
@@ -464,11 +644,35 @@ async def run_shopping_agent(
                 search_fn=_search_products,
                 propose_fn=_propose_purchase,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            fallback_error_code = _classify_llm_error_code(exc)
+            safe_msg = _SECRET_IN_MSG_RE.sub("[REDACTED]", str(exc))[:200]
+            tool_trace.append(
+                {
+                    "step": len(tool_trace) + 1,
+                    "action": "llm_tool_runner",
+                    "provider": llm_provider,
+                    "fallback_used": True,
+                    "error_code": fallback_error_code,
+                    "message": safe_msg,
+                }
+            )
 
     if not proposed_cases:
-        # Deterministic 2-tool execution fallback
+        if llm is not None and fallback_error_code is None:
+            fallback_error_code = "NO_LLM_PROPOSAL"
+            tool_trace.append(
+                {
+                    "step": len(tool_trace) + 1,
+                    "action": "llm_tool_runner",
+                    "provider": llm_provider,
+                    "fallback_used": True,
+                    "error_code": fallback_error_code,
+                }
+            )
+        trace_ctx["provider"] = "deterministic"
+        trace_ctx["fallback_used"] = llm is not None
+        trace_ctx["error_code"] = fallback_error_code
         candidates = await _search_products(query, 5)
         if candidates:
             top = candidates[0]

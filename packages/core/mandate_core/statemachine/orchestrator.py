@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 from mandate_core.domain.errors import (
     IllegalTransitionError,
@@ -26,7 +26,7 @@ from mandate_core.domain.models import (
     RecheckJob,
     utcnow,
 )
-from mandate_core.ledger import verify_ledger_chain
+from mandate_core.ledger import IntentReceipt, generate_intent_receipt, verify_ledger_chain
 from mandate_core.merger import build_snapshot, diff
 from mandate_core.ports import LLM, Catalog, Notifier, PaymentProvider
 from mandate_core.recheck import (
@@ -917,6 +917,27 @@ class Orchestrator:
             "passed_checks": [f.model_dump(mode="json") for f in infos],
             "snapshot_diff": [f.model_dump(mode="json") for f in diff_findings],
         }
+
+    async def get_case_receipt(
+        self,
+        case_id: str,
+        *,
+        narrative_mode: Literal["auto", "deterministic", "llm"] = "auto",
+    ) -> IntentReceipt:
+        case = await self.store.get_case(case_id)
+        if case is None:
+            raise NotFoundError(f"Case {case_id} not found")
+        snapshots = await self.store.list_snapshots(case_id)
+        latest_snapshot = snapshots[-1] if snapshots else None
+        entries, _ = await self.store.list_ledger(case_id=case_id, limit=1, sort_dir="desc")
+        latest_entry = entries[0] if entries else None
+        llm_to_use = None if narrative_mode == "deterministic" else self.llm
+        return await generate_intent_receipt(
+            case=case,
+            snapshot=latest_snapshot,
+            latest_ledger_entry=latest_entry,
+            llm=llm_to_use,
+        )
 
     async def verify_ledger(self) -> dict[str, Any]:
         entries = await self.store.iter_all_ledger()

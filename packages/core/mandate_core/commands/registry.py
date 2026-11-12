@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mandate_core.commands.parser import ParsedCommand, parse_command
-from mandate_core.domain.errors import CommandParseError, NotFoundError
+from mandate_core.domain.errors import AuthorizationError, CommandParseError, NotFoundError
 from mandate_core.domain.models import CaseState, Money
 from mandate_core.statemachine import Orchestrator
 
@@ -75,8 +75,8 @@ class CommandRegistry:
         *,
         orchestrator: Orchestrator,
         compile_and_draft: Callable[[str, str], Awaitable[dict[str, Any]]] | None = None,
-        run_options: Callable[[str | None], Awaitable[dict[str, Any]]] | None = None,
-        pick_option: Callable[[int, str | None], Awaitable[dict[str, Any]]] | None = None,
+        run_options: Callable[[str | None, str | None], Awaitable[dict[str, Any]]] | None = None,
+        pick_option: Callable[[int, str | None, str | None], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         self.compile_and_draft = compile_and_draft
@@ -207,6 +207,7 @@ class CommandRegistry:
         actor: str = "user",
         case_id: str | None = None,
         mandate_id: str | None = None,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         parsed: ParsedCommand | None = parse_command(raw_text, source=source)
         if parsed is None:
@@ -214,7 +215,7 @@ class CommandRegistry:
 
         spec = self.specs[parsed.name]
         validated = self._bind_args(parsed, case_id=case_id)
-        ctx = {"actor": actor, "case_id": case_id, "mandate_id": mandate_id}
+        ctx = {"actor": actor, "case_id": case_id, "mandate_id": mandate_id, "owner_id": owner_id}
         result = await spec.handler(validated, ctx)
         return {"is_command": True, "command": parsed.name, **result}
 
@@ -246,10 +247,23 @@ class CommandRegistry:
         target_id = a[0] if a else case_id
         return OptionalIdArgs(case_id=target_id)
 
-    async def _resolve_case_id(self, args_case_id: str | None) -> str:
+    async def _assert_case_owner(self, case_id: str, owner_id: str | None) -> None:
+        if not owner_id:
+            return
+        case = await self.orchestrator.store.get_case(case_id)
+        if case is None:
+            raise NotFoundError(f"Case {case_id} not found")
+        mandate = await self.orchestrator.store.get_mandate(case.mandate_id)
+        if mandate is not None and mandate.owner_id != owner_id:
+            raise AuthorizationError("Access denied: case belongs to another user")
+
+    async def _resolve_case_id(
+        self, args_case_id: str | None, *, owner_id: str | None = None
+    ) -> str:
         if args_case_id:
+            await self._assert_case_owner(args_case_id, owner_id)
             return args_case_id
-        latest = await self.orchestrator.store.get_latest_case()
+        latest = await self.orchestrator.store.get_latest_case(owner_id=owner_id)
         if latest is None:
             raise NotFoundError("No active case found; pass a case_id explicitly")
         return latest.case_id
@@ -263,28 +277,34 @@ class CommandRegistry:
         }
 
     async def _handle_mandate(self, args: MandateCmdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        owner_id = ctx.get("owner_id")
         if args.text.strip().lower() == "show":
             m = (
                 await self.orchestrator.store.get_mandate(ctx["mandate_id"])
                 if ctx.get("mandate_id")
-                else await self.orchestrator.store.get_latest_mandate()
+                else await self.orchestrator.store.get_latest_mandate(owner_id=owner_id)
             )
             if m is None:
                 raise NotFoundError("No mandate exists yet")
+            if owner_id and m.owner_id != owner_id:
+                raise AuthorizationError("Access denied: mandate belongs to another user")
             return {"mandate": m.model_dump(mode="json")}
         if self.compile_and_draft is None:
             raise CommandParseError("Mandate compiler callback is not wired")
         return await self.compile_and_draft(args.text, ctx["actor"])
 
     async def _handle_confirm(self, _args: EmptyArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        m = await self.orchestrator.confirm_mandate(ctx.get("mandate_id"), actor=ctx["actor"])
+        m = await self.orchestrator.confirm_mandate(
+            ctx.get("mandate_id"), actor=ctx["actor"], owner_id=ctx.get("owner_id")
+        )
         return {"mandate": m.model_dump(mode="json")}
 
     async def _handle_amend(self, args: AmendCmdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        owner_id = ctx.get("owner_id")
         field = args.field.strip().lower()
         updates: dict[str, Any] = {}
         if field == "max_total":
-            latest = await self.orchestrator.store.get_latest_mandate()
+            latest = await self.orchestrator.store.get_latest_mandate(owner_id=owner_id)
             currency = latest.max_total.currency if latest else "USD"
             updates["max_total"] = Money.of(args.value, currency)
         elif field == "require_verified_seller":
@@ -294,69 +314,73 @@ class CommandRegistry:
         else:
             raise CommandParseError(f"Field '{field}' cannot be amended via /amend")
         m = await self.orchestrator.amend_mandate(
-            ctx.get("mandate_id"), updates=updates, actor=ctx["actor"]
+            ctx.get("mandate_id"), updates=updates, actor=ctx["actor"], owner_id=owner_id
         )
         return {"mandate": m.model_dump(mode="json"), "needs_confirm": True}
 
     async def _handle_options(self, _args: EmptyArgs, ctx: dict[str, Any]) -> dict[str, Any]:
         if self.run_options is None:
             return {"options": [], "message": "Catalog search service not attached"}
-        return await self.run_options(ctx.get("mandate_id"))
+        return await self.run_options(ctx.get("mandate_id"), ctx.get("owner_id"))
 
     async def _handle_pick(self, args: PickCmdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
         if self.pick_option is None:
             raise CommandParseError("Option picker callback is not wired")
-        return await self.pick_option(args.index, ctx.get("mandate_id"))
+        return await self.pick_option(args.index, ctx.get("mandate_id"), ctx.get("owner_id"))
 
     async def _handle_approve(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         case = await self.orchestrator.approve_and_capture(cid, actor=ctx["actor"])
         return {"case": case.model_dump(mode="json")}
 
     async def _handle_cancel(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         case = await self.orchestrator.cancel(cid, actor=ctx["actor"])
         return {"case": case.model_dump(mode="json")}
 
     async def _handle_hold(self, args: HoldCmdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id or ctx.get("case_id"))
+        cid = await self._resolve_case_id(
+            args.case_id or ctx.get("case_id"), owner_id=ctx.get("owner_id")
+        )
         case = await self.orchestrator.hold_case(
             cid, duration_seconds=args.duration_seconds, actor=ctx["actor"]
         )
         return {"case": case.model_dump(mode="json")}
 
     async def _handle_resume(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         case = await self.orchestrator.resume_case(cid, actor=ctx["actor"])
         return {"case": case.model_dump(mode="json")}
 
     async def _handle_recheck(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         case = await self.orchestrator.recheck_case(cid, actor=ctx["actor"])
         return {"case": case.model_dump(mode="json")}
 
-    async def _handle_status(self, args: OptionalIdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+    async def _handle_status(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         case = await self.orchestrator.store.get_case(cid)
         if case is None:
             raise NotFoundError(f"Case {cid} not found")
         return {"case": case.model_dump(mode="json")}
 
-    async def _handle_why(self, args: OptionalIdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+    async def _handle_why(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         return await self.orchestrator.explain_case(cid)
 
-    async def _handle_receipt(self, args: OptionalIdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
-        cid = await self._resolve_case_id(args.case_id)
+    async def _handle_receipt(self, args: OptionalIdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        cid = await self._resolve_case_id(args.case_id, owner_id=ctx.get("owner_id"))
         receipt = await self.orchestrator.get_case_receipt(cid)
         return {"receipt": receipt.model_dump(mode="json")}
 
-    async def _handle_ledger(self, args: LedgerCmdArgs, _ctx: dict[str, Any]) -> dict[str, Any]:
-        entries, total = await self.orchestrator.store.list_ledger(limit=args.limit, sort_dir="desc")
+    async def _handle_ledger(self, args: LedgerCmdArgs, ctx: dict[str, Any]) -> dict[str, Any]:
+        entries, total = await self.orchestrator.store.list_ledger(
+            owner_id=ctx.get("owner_id"), limit=args.limit, sort_dir="desc"
+        )
         return {
             "total_count": total,
             "entries": [e.model_dump(mode="json") for e in entries],
         }
 
     async def _handle_revoke(self, _args: EmptyArgs, ctx: dict[str, Any]) -> dict[str, Any]:
-        return await self.orchestrator.revoke_all(actor=ctx["actor"])
+        return await self.orchestrator.revoke_all(actor=ctx["actor"], owner_id=ctx.get("owner_id"))

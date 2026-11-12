@@ -36,6 +36,11 @@ class PolicyBlockedError(MandateCoreError):
     status_code = 403
 
 
+class AuthorizationError(MandateCoreError):
+    code = "FORBIDDEN"
+    status_code = 403
+
+
 class CommandParseError(MandateCoreError):
     code = "COMMAND_PARSE_ERROR"
     status_code = 400

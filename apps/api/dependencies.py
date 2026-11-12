@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import Request
 from mandate_core.commands import CommandRegistry
-from mandate_core.domain.errors import NotFoundError
+from mandate_core.domain.errors import AuthorizationError, NotFoundError
 from mandate_core.ports import LLM, Catalog, Notifier, PaymentProvider
 from mandate_core.statemachine import Orchestrator
 from mandate_core.workflows import (
@@ -46,6 +46,7 @@ class AppContainer:
     google_verifier: GoogleIdentityVerifier
     sms_sender: SmsOtpSender
     last_options: list[RankedOption] = field(default_factory=list)
+    options_by_owner: dict[str, list[RankedOption]] = field(default_factory=dict)
 
 
 def build_container(
@@ -124,7 +125,7 @@ def build_container(
     )
     resolved_google = google_verifier or GoogleIdentityVerifier(
         client_id=settings.google_client_id,
-        allow_demo_mode=settings.auth_allow_demo_mode,
+        allow_demo_mode=settings.effective_allow_demo_mode,
     )
     resolved_sms = sms_sender or SmsOtpSender(
         account_sid=settings.twilio_account_sid,
@@ -161,14 +162,18 @@ def build_container(
         saved = await orchestrator.create_mandate_draft(draft, actor=actor)
         return {"mandate": saved.model_dump(mode="json"), "needs_confirm": True}
 
-    async def _run_options(mandate_id: str | None) -> dict[str, Any]:
+    async def _run_options(
+        mandate_id: str | None, owner_id: str | None = None
+    ) -> dict[str, Any]:
         mandate = (
             await store.get_mandate(mandate_id)
             if mandate_id
-            else await store.get_active_mandate()
+            else await store.get_active_mandate(owner_id=owner_id)
         )
         if mandate is None:
             raise NotFoundError("No active mandate found; use /mandate and /confirm first")
+        if owner_id and mandate.owner_id != owner_id:
+            raise AuthorizationError("Access denied: mandate belongs to another user")
         opts = await search_and_ask_preference(
             mandate=mandate,
             query=mandate.intent_text,
@@ -176,7 +181,10 @@ def build_container(
             llm=resolved_llm,
             limit=5,
         )
-        container.last_options = opts
+        bucket = owner_id or "__default__"
+        container.options_by_owner[bucket] = opts
+        if owner_id is None:
+            container.last_options = opts
         return {
             "mandate_id": mandate.mandate_id,
             "options": [
@@ -191,22 +199,30 @@ def build_container(
             ],
         }
 
-    async def _pick_option(index: int, mandate_id: str | None) -> dict[str, Any]:
-        if index < 1 or index > len(container.last_options):
+    async def _pick_option(
+        index: int, mandate_id: str | None, owner_id: str | None = None
+    ) -> dict[str, Any]:
+        bucket = owner_id or "__default__"
+        scoped_opts = container.options_by_owner.get(
+            bucket, container.last_options if owner_id is None else []
+        )
+        if index < 1 or index > len(scoped_opts):
             raise NotFoundError(f"Option #{index} not found; run /options first")
-        selected = container.last_options[index - 1]
+        selected = scoped_opts[index - 1]
         mandate = (
             await store.get_mandate(mandate_id)
             if mandate_id
-            else await store.get_active_mandate()
+            else await store.get_active_mandate(owner_id=owner_id)
         )
         if mandate is None:
             raise NotFoundError("No active mandate found")
+        if owner_id and mandate.owner_id != owner_id:
+            raise AuthorizationError("Access denied: mandate belongs to another user")
         prop = build_proposal_from_product(
             mandate=mandate, product=selected.product, rationale=selected.reason
         )
         case = await orchestrator.submit_proposal(prop, actor="shopping-agent")
-        locked = await orchestrator.lock_cart(case.case_id, actor="user")
+        locked = await orchestrator.lock_cart(case.case_id, actor=owner_id or "user")
         return {"case": locked.model_dump(mode="json")}
 
     container.commands = CommandRegistry(

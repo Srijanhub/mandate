@@ -11,20 +11,14 @@ from mandate_core.domain.models import AuditVerdict
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from adapters.errors import redact_secrets
+
 logger = logging.getLogger("mandate.llm")
 
 T = TypeVar("T")
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$", flags=re.DOTALL | re.IGNORECASE)
 _AMOUNT_KEYS = ("max_total_amount", "max_spend_per_day_amount", "max_spend_per_week_amount")
-_SECRET_PATTERNS = (
-    re.compile(r"AQ\.[A-Za-z0-9_-]{8,}"),
-    re.compile(r"AIza[A-Za-z0-9_-]{10,}"),
-    re.compile(r"gsk_[A-Za-z0-9_-]{8,}"),
-    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
-    re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", flags=re.IGNORECASE),
-    re.compile(r"((?:x-goog-api-key|api[_-]?key|authorization)['\":=\s]+)[A-Za-z0-9._-]+", flags=re.IGNORECASE),
-)
 
 
 class LLMTransientError(RuntimeError):
@@ -33,17 +27,6 @@ class LLMTransientError(RuntimeError):
     def __init__(self, message: str, *, error_code: str = "LLM_TRANSIENT_ERROR") -> None:
         super().__init__(redact_secrets(message))
         self.error_code = error_code
-
-
-def redact_secrets(text: str) -> str:
-    """Scrub API keys and bearer tokens from LLM error strings and logs."""
-    cleaned = text
-    for pat in _SECRET_PATTERNS:
-        if pat.groups >= 1:
-            cleaned = pat.sub(r"\1[REDACTED]", cleaned)
-        else:
-            cleaned = pat.sub("[REDACTED]", cleaned)
-    return cleaned
 
 
 def _extract_status_code(exc: BaseException) -> int | None:

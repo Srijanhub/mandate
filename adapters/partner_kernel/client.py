@@ -10,6 +10,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from mandate_core.domain.errors import ValidationError
 
+from adapters.errors import redact_secrets
+
 _BLOCKED_HOST_SUFFIXES = (".local", ".internal", ".localhost")
 _MAX_REDIRECT_HOPS = 3
 _MAX_RESPONSE_BYTES = 256 * 1024
@@ -144,7 +146,7 @@ class KernelVerifier:
                     "mode": "live",
                 }
         except Exception as exc:
-            return {"configured": True, "ok": False, "mode": "live", "error": str(exc)[:200]}
+            return {"configured": True, "ok": False, "mode": "live", "error": redact_secrets(str(exc))[:200]}
 
     async def _fetch_merchant_html(
         self,
@@ -260,7 +262,7 @@ class KernelVerifier:
             except ValidationError:
                 raise
             except Exception as exc:
-                warnings.append(f"Merchant fetch warning: {str(exc)[:160]}")
+                warnings.append(f"Merchant fetch warning: {redact_secrets(str(exc))[:160]}")
             finally:
                 if session_id:
                     try:

@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any, Literal
 
 from mandate_core.domain.errors import (
+    AuthorizationError,
     IllegalTransitionError,
     NotFoundError,
     PaymentProviderError,
@@ -199,15 +200,23 @@ class Orchestrator:
             )
         return saved
 
-    async def confirm_mandate(self, mandate_id: str | None = None, *, actor: str = "user") -> Mandate:
+    async def confirm_mandate(
+        self,
+        mandate_id: str | None = None,
+        *,
+        actor: str = "user",
+        owner_id: str | None = None,
+    ) -> Mandate:
         async with self.store.atomic():
             mandate = (
                 await self.store.get_mandate(mandate_id)
                 if mandate_id
-                else await self.store.get_latest_mandate()
+                else await self.store.get_latest_mandate(owner_id=owner_id)
             )
             if mandate is None:
                 raise NotFoundError("No mandate draft found to confirm")
+            if owner_id and mandate.owner_id != owner_id:
+                raise AuthorizationError("Access denied: mandate belongs to another user")
             if not can_transition_mandate(mandate.status, MandateStatus.ACTIVE):
                 await self.store.append_ledger(
                     case_id=None,
@@ -237,15 +246,18 @@ class Orchestrator:
         *,
         updates: dict[str, Any],
         actor: str = "user",
+        owner_id: str | None = None,
     ) -> Mandate:
         async with self.store.atomic():
             current = (
                 await self.store.get_mandate(mandate_id)
                 if mandate_id
-                else await self.store.get_latest_mandate()
+                else await self.store.get_latest_mandate(owner_id=owner_id)
             )
             if current is None:
                 raise NotFoundError("Mandate not found")
+            if owner_id and current.owner_id != owner_id:
+                raise AuthorizationError("Access denied: mandate belongs to another user")
             if current.status == MandateStatus.REVOKED:
                 raise IllegalTransitionError("Cannot amend a REVOKED mandate")
 
@@ -775,14 +787,20 @@ class Orchestrator:
             )
             return case
 
-    async def revoke_all(self, *, reason: str = "Kill switch /revoke", actor: str = "user") -> dict[str, Any]:
+    async def revoke_all(
+        self,
+        *,
+        reason: str = "Kill switch /revoke",
+        actor: str = "user",
+        owner_id: str | None = None,
+    ) -> dict[str, Any]:
         """Kill switch: revoke active mandates, freeze/cancel open cases, void all PayPal authorizations."""
         revoked_mandates: list[str] = []
         cancelled_cases: list[str] = []
         voided_authorizations: list[str] = []
 
         async with self.store.atomic():
-            mandates = await self.store.list_mandates(limit=200)
+            mandates = await self.store.list_mandates(owner_id=owner_id, limit=200)
             for m in mandates:
                 if m.status in {MandateStatus.DRAFT, MandateStatus.ACTIVE}:
                     m.status = MandateStatus.REVOKED
@@ -797,7 +815,7 @@ class Orchestrator:
                         payload={"reason": reason},
                     )
 
-            open_cases = await self.store.list_open_cases()
+            open_cases = await self.store.list_open_cases(owner_id=owner_id)
             for c in open_cases:
                 if c.paypal_authorization_id:
                     try:

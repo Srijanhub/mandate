@@ -13,7 +13,14 @@ from pydantic import BaseModel
 
 from adapters.catalog_mock import MockCatalog
 from adapters.partner_elastic import serialize_catalog_docs
-from apps.api.auth import require_admin_auth, require_user_auth
+from apps.api.auth import (
+    AuthIdentity,
+    assert_mandate_access,
+    get_optional_identity,
+    require_admin_auth,
+    require_user_auth,
+    scoped_owner_id,
+)
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     CaseResponse,
@@ -143,11 +150,13 @@ async def get_catalog_item(
 )
 async def shopping_options(
     body: SearchOptionsRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> ShoppingOptionsResponse:
     mandate = await container.store.get_mandate(body.mandate_id)
     if mandate is None:
         raise NotFoundError(f"Mandate {body.mandate_id} not found")
+    assert_mandate_access(mandate, identity)
     options = await search_and_ask_preference(
         mandate=mandate,
         query=body.query,
@@ -155,7 +164,10 @@ async def shopping_options(
         llm=container.llm,
         limit=body.limit,
     )
-    container.last_options = options
+    owner_id = scoped_owner_id(identity)
+    container.options_by_owner[owner_id or "__default__"] = options
+    if owner_id is None:
+        container.last_options = options
     return ShoppingOptionsResponse(
         mandate_id=mandate.mandate_id,
         options=[
@@ -179,12 +191,14 @@ async def shopping_options(
 )
 async def shopping_agent_propose(
     body: ShoppingAgentRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> ShoppingAgentResponse:
     """Invoke the 2-tool Shopping Agent (search_products + propose_purchase ONLY; zero PayPal tools)."""
     mandate = await container.store.get_mandate(body.mandate_id)
     if mandate is None:
         raise NotFoundError(f"Mandate {body.mandate_id} not found")
+    assert_mandate_access(mandate, identity)
     res = await run_shopping_agent(
         mandate=mandate,
         query=body.query,
@@ -203,11 +217,13 @@ async def shopping_agent_propose(
 )
 async def shopping_pick(
     body: PickOptionRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
     mandate = await container.store.get_mandate(body.mandate_id)
     if mandate is None:
         raise NotFoundError(f"Mandate {body.mandate_id} not found")
+    assert_mandate_access(mandate, identity)
     product = await container.catalog.get(body.product_id)
     if product is None:
         raise NotFoundError(f"Product {body.product_id} not found")
@@ -217,7 +233,9 @@ async def shopping_pick(
     )
     case = await container.orchestrator.submit_proposal(prop, actor="shopping-agent")
     if case.state.value == "PROPOSED":
-        case = await container.orchestrator.lock_cart(case.case_id, actor="user")
+        case = await container.orchestrator.lock_cart(
+            case.case_id, actor=scoped_owner_id(identity) or "user"
+        )
     return CaseResponse(case=case)
 
 

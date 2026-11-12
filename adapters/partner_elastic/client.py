@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from adapters.errors import ExternalServiceError
+from adapters.errors import ExternalServiceError, redact_secrets
 
 
 def _tokenize(text: str) -> set[str]:
@@ -135,7 +135,7 @@ class ElasticSearchAdapter:
                     "mode": "live",
                 }
         except Exception as exc:
-            return {"configured": True, "ok": False, "mode": "live", "error": str(exc)[:200]}
+            return {"configured": True, "ok": False, "mode": "live", "error": redact_secrets(str(exc))[:200]}
 
     async def bulk_index(
         self,
@@ -175,7 +175,7 @@ class ElasticSearchAdapter:
                 "index": index_name,
                 "indexed": 0,
                 "errors": True,
-                "error": str(exc)[:200],
+                "error": redact_secrets(str(exc))[:200],
             }
         if resp.status_code >= 400:
             return {

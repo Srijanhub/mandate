@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mandate_core.domain.errors import MandateCoreError
 
+from adapters.errors import redact_secrets
 from apps.api.config import Settings
 from apps.api.dependencies import AppContainer, build_container
 from apps.api.routers import (
@@ -48,6 +49,7 @@ def create_app(
     container_override: AppContainer | None = None,
 ) -> FastAPI:
     cfg = settings or Settings()
+    cfg.validate_security_posture()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -80,7 +82,7 @@ def create_app(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cfg.cors_origin_list or ["*"],
+        allow_origins=cfg.cors_origin_list if cfg.is_production else (cfg.cors_origin_list or ["*"]),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["*"],
@@ -91,7 +93,7 @@ def create_app(
         body: dict[str, Any] = {
             "error": {
                 "code": exc.code,
-                "message": str(exc),
+                "message": redact_secrets(str(exc)),
             }
         }
         if exc.details is not None:

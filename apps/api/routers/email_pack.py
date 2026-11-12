@@ -7,7 +7,7 @@ from mandate_core.domain.models import EmailProposal, Mandate, MandateStatus, Mo
 from mandate_core.rules import RuleContext, evaluate_rules
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_user_auth
+from apps.api.auth import AuthIdentity, get_optional_identity, require_user_auth, scoped_owner_id
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import EmailPolicyCheckResponse
 
@@ -29,14 +29,16 @@ class EmailPolicyCheckRequest(BaseModel):
 @router.post("/check", response_model=EmailPolicyCheckResponse)
 async def check_email_agent_proposal(
     body: EmailPolicyCheckRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> EmailPolicyCheckResponse:
     """
     Section 9 Demo Beat: Reuses the exact same Mandate Core Rule Engine + Ledger
     for an autonomous email-sending agent (max_recipients + allowlist_domain).
     """
+    owner_id = scoped_owner_id(identity) or "demo-user"
     mandate = Mandate(
-        owner_id="demo-user",
+        owner_id=owner_id,
         domain="email",
         intent_text=f"Allow email sends to {body.allowed_recipient_domains} (max {body.max_recipients} recipients)",
         max_total=Money.zero("USD"),

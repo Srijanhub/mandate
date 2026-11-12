@@ -66,5 +66,38 @@ class Settings(BaseSettings):
     enable_demo_lab: bool = True
 
     @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() in {"production", "prod"}
+
+    @property
+    def effective_allow_demo_mode(self) -> bool:
+        return False if self.is_production else self.auth_allow_demo_mode
+
+    @property
+    def effective_expose_demo_otp(self) -> bool:
+        return False if self.is_production else self.auth_expose_demo_otp
+
+    def validate_security_posture(self) -> None:
+        """Fail closed in production if auth is enabled with insecure default secrets."""
+        if not (self.is_production and self.require_auth):
+            return
+        if (
+            not self.auth_jwt_secret.strip()
+            or self.auth_jwt_secret == "dev-mandate-jwt-secret-change-me"
+            or len(self.auth_jwt_secret.strip()) < 16
+        ):
+            raise ValueError(
+                "Production REQUIRE_AUTH=true requires a strong non-default AUTH_JWT_SECRET (>= 16 chars)"
+            )
+        if not self.api_admin_token.strip() or self.api_admin_token == "dev-admin-token-change-me":
+            raise ValueError(
+                "Production REQUIRE_AUTH=true requires a non-default API_ADMIN_TOKEN"
+            )
+        if not self.api_user_token.strip() or self.api_user_token == "dev-user-token-change-me":
+            raise ValueError(
+                "Production REQUIRE_AUTH=true requires a non-default API_USER_TOKEN"
+            )
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

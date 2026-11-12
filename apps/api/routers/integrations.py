@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from mandate_core.domain.errors import NotFoundError
 
+from adapters.errors import redact_secrets
 from adapters.llm_astropods import AstropodsLLM
 from adapters.notifier_console import WebhookNotifier
 from adapters.partner_elastic import serialize_catalog_docs, serialize_ledger_docs
@@ -55,7 +56,7 @@ async def _bounded_probe(coro: Awaitable[dict[str, Any]], *, timeout: float = 3.
     try:
         return await asyncio.wait_for(coro, timeout=timeout)
     except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        return {"ok": False, "error": f"{type(exc).__name__}: {redact_secrets(str(exc))[:160]}"}
 
 
 async def _probe_paypal(container: AppContainer, *, enabled: bool) -> dict[str, Any]:
@@ -203,7 +204,7 @@ async def integrations_status(
         IntegrationServiceStatus(
             name="google_auth",
             configured=flags["google_auth"],
-            mode="live" if flags["google_auth"] else ("demo" if s.auth_allow_demo_mode else "disabled"),
+            mode="live" if flags["google_auth"] else ("demo" if s.effective_allow_demo_mode else "disabled"),
             details={"endpoints": ["GET /auth/config", "POST /auth/google", "GET /auth/me"]},
         ),
         IntegrationServiceStatus(

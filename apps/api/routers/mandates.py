@@ -9,7 +9,13 @@ from mandate_core.domain.models import Mandate, Money
 from mandate_core.workflows import compile_mandate_from_text
 from pydantic import BaseModel, Field
 
-from apps.api.auth import AuthIdentity, get_optional_identity, require_user_auth
+from apps.api.auth import (
+    AuthIdentity,
+    assert_mandate_access,
+    get_optional_identity,
+    require_user_auth,
+    scoped_owner_id,
+)
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     BryntumEvent,
@@ -56,11 +62,8 @@ async def compile_mandate(
     identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateDraftResponse:
-    effective_owner = (
-        identity.user_id
-        if (identity and identity.user_id and body.owner_id == "user-1")
-        else body.owner_id
-    )
+    owner_id = scoped_owner_id(identity)
+    effective_owner = owner_id if owner_id else body.owner_id
     draft: Mandate = await compile_mandate_from_text(
         body.prompt, owner_id=effective_owner, llm=container.llm
     )
@@ -72,9 +75,13 @@ async def compile_mandate(
 async def confirm_mandate(
     mandate_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateResponse:
-    confirmed = await container.orchestrator.confirm_mandate(mandate_id, actor=actor)
+    owner_id = scoped_owner_id(identity)
+    confirmed = await container.orchestrator.confirm_mandate(
+        mandate_id, actor=owner_id or actor, owner_id=owner_id
+    )
     return MandateResponse(mandate=confirmed)
 
 
@@ -82,11 +89,13 @@ async def confirm_mandate(
 async def amend_mandate(
     mandate_id: str,
     body: AmendMandateRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateDraftResponse:
     current = await container.store.get_mandate(mandate_id)
     if current is None:
         raise NotFoundError(f"Mandate {mandate_id} not found")
+    assert_mandate_access(current, identity)
     cur_code = body.currency or current.max_total.currency
     updates: dict[str, Any] = {}
     if body.max_total_amount is not None:
@@ -109,8 +118,9 @@ async def amend_mandate(
         if val is not None:
             updates[key] = val
 
+    owner_id = scoped_owner_id(identity)
     amended = await container.orchestrator.amend_mandate(
-        mandate_id, updates=updates, actor=body.actor
+        mandate_id, updates=updates, actor=owner_id or body.actor, owner_id=owner_id
     )
     return MandateDraftResponse(mandate=amended, needs_confirm=True)
 
@@ -118,10 +128,14 @@ async def amend_mandate(
 @router.post("/revoke", response_model=RevokeAllResponse)
 async def revoke_all_mandates(
     body: RevokeRequest | None = None,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> RevokeAllResponse:
     req = body or RevokeRequest()
-    res = await container.orchestrator.revoke_all(reason=req.reason, actor=req.actor)
+    owner_id = scoped_owner_id(identity)
+    res = await container.orchestrator.revoke_all(
+        reason=req.reason, actor=owner_id or req.actor, owner_id=owner_id
+    )
     return RevokeAllResponse(**res)
 
 
@@ -129,9 +143,11 @@ async def revoke_all_mandates(
 async def list_mandates(
     owner_id: str | None = None,
     limit: int = 50,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateListResponse:
-    rows = await container.store.list_mandates(owner_id=owner_id, limit=limit)
+    effective_owner = scoped_owner_id(identity) or owner_id
+    rows = await container.store.list_mandates(owner_id=effective_owner, limit=limit)
     return MandateListResponse(mandates=rows)
 
 
@@ -139,10 +155,12 @@ async def list_mandates(
 async def mandates_schedule(
     owner_id: str | None = None,
     limit: int = 50,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> BryntumTimelineResponse:
     """Bryntum Calendar/Scheduler compatible feed of mandate validity and delivery windows."""
-    rows = await container.store.list_mandates(owner_id=owner_id, limit=max(1, min(limit, 200)))
+    effective_owner = scoped_owner_id(identity) or owner_id
+    rows = await container.store.list_mandates(owner_id=effective_owner, limit=max(1, min(limit, 200)))
     resources: list[BryntumResource] = []
     events: list[BryntumEvent] = []
     seen_owners: set[str] = set()
@@ -178,9 +196,11 @@ async def mandates_schedule(
 async def get_mandate(
     mandate_id: str,
     version: int | None = None,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> MandateResponse:
     m = await container.store.get_mandate(mandate_id, version=version)
     if m is None:
         raise NotFoundError(f"Mandate {mandate_id} not found")
+    assert_mandate_access(m, identity)
     return MandateResponse(mandate=m)

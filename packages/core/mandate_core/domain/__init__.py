@@ -1,4 +1,5 @@
 from .errors import (
+    AuthorizationError,
     CommandParseError,
     ConflictError,
     IllegalTransitionError,
@@ -33,6 +34,7 @@ from .money import Money, currency_scale, parse_decimal_strict
 
 __all__ = [
     "AuditVerdict",
+    "AuthorizationError",
     "Case",
     "CaseSnapshot",
     "CaseState",

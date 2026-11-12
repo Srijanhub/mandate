@@ -10,7 +10,7 @@ from urllib.parse import quote
 import httpx
 from mandate_core.domain.errors import ValidationError
 
-from adapters.errors import ExternalServiceError
+from adapters.errors import ExternalServiceError, redact_secrets
 
 _TASK_SLUG_RE = re.compile(r"^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)?$")
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -79,7 +79,7 @@ class RenderWorkflowsClient:
                     "mode": "live",
                 }
         except Exception as exc:
-            return {"configured": True, "ok": False, "mode": "live", "error": str(exc)[:200]}
+            return {"configured": True, "ok": False, "mode": "live", "error": redact_secrets(str(exc))[:200]}
 
     async def trigger_task(
         self,

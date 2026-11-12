@@ -8,6 +8,8 @@ from typing import Any
 
 from mandate_core.domain.errors import ValidationError
 
+from adapters.errors import redact_secrets
+
 
 @dataclass(frozen=True)
 class GoogleIdentity:
@@ -67,14 +69,14 @@ class GoogleIdentityVerifier:
             try:
                 claims = await asyncio.to_thread(fn, token, self.client_id)
             except Exception as exc:
-                raise ValidationError(f"Invalid Google ID token: {str(exc)[:160]}") from exc
+                raise ValidationError(f"Invalid Google ID token: {redact_secrets(str(exc))[:160]}") from exc
 
             sub = str(claims.get("sub") or "").strip()
             email = str(claims.get("email") or "").strip().lower()
             email_verified = claims.get("email_verified")
             if not sub or not email:
                 raise ValidationError("Google token missing required subject or email claims")
-            if email_verified is False:
+            if email_verified is not True:
                 raise ValidationError("Google account email is not verified")
 
             return GoogleIdentity(

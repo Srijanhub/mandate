@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
+from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from mandate_core.domain.models import new_id, utcnow
 from pydantic import BaseModel, Field
 
@@ -15,7 +17,7 @@ from adapters.auth import (
 )
 from apps.api.auth import (
     AuthIdentity,
-    get_optional_identity,
+    get_optional_link_identity,
     require_authenticated_identity,
 )
 from apps.api.dependencies import AppContainer, get_container
@@ -23,6 +25,33 @@ from apps.api.dependencies import AppContainer, get_container
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 _OTP_TTL_SECONDS = 300
+_IP_RATE_WINDOW_SECONDS = 300.0
+_MAX_TRACKED_IPS = 2048
+_ip_request_buckets: OrderedDict[str, deque[float]] = OrderedDict()
+
+
+def _enforce_ip_rate_limit(request: Request, *, action: str, max_hits: int) -> None:
+    host = request.client.host if (request.client and request.client.host) else "unknown"
+    key = f"{action}:{host}"
+    now = time.monotonic()
+    cutoff = now - _IP_RATE_WINDOW_SECONDS
+    bucket = _ip_request_buckets.get(key)
+    if bucket is None:
+        bucket = deque()
+        _ip_request_buckets[key] = bucket
+        while len(_ip_request_buckets) > _MAX_TRACKED_IPS:
+            _ip_request_buckets.popitem(last=False)
+    else:
+        _ip_request_buckets.move_to_end(key)
+
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= max_hits:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many authentication requests from this client; please wait a few minutes",
+        )
+    bucket.append(now)
 
 
 class AuthConfigResponse(BaseModel):
@@ -115,13 +144,15 @@ async def auth_config(container: AppContainer = Depends(get_container)) -> AuthC
     s = container.settings
     google_live = container.google_verifier.is_live
     sms_live = container.sms_sender.is_live
+    allow_demo = s.effective_allow_demo_mode
+    expose_otp = s.effective_expose_demo_otp
     return AuthConfigResponse(
-        google_enabled=google_live or s.auth_allow_demo_mode,
+        google_enabled=google_live or allow_demo,
         google_client_id=s.google_client_id or None,
-        google_mode="live" if google_live else ("demo" if s.auth_allow_demo_mode else "disabled"),
+        google_mode="live" if google_live else ("demo" if allow_demo else "disabled"),
         phone_enabled=True,
         phone_mode="twilio" if sms_live else "demo",
-        demo_otp_exposed=(not sms_live) and s.auth_expose_demo_otp,
+        demo_otp_exposed=(not sms_live) and expose_otp,
         require_auth=s.require_auth,
     )
 
@@ -129,7 +160,7 @@ async def auth_config(container: AppContainer = Depends(get_container)) -> AuthC
 @router.post("/google", response_model=AuthSessionResponse)
 async def sign_in_with_google(
     body: GoogleAuthRequest,
-    identity: AuthIdentity | None = Depends(get_optional_identity),
+    identity: AuthIdentity | None = Depends(get_optional_link_identity),
     container: AppContainer = Depends(get_container),
 ) -> AuthSessionResponse:
     """Verify Google ID token (or demo email when unconfigured) and issue a Mandate session JWT."""
@@ -163,10 +194,12 @@ async def sign_in_with_google(
 
 @router.post("/phone/request-otp", response_model=PhoneOtpRequestResponse)
 async def request_phone_otp(
+    request: Request,
     body: PhoneOtpRequest,
     container: AppContainer = Depends(get_container),
 ) -> PhoneOtpRequestResponse:
     """Send a rate-limited, single-use 6-digit SMS OTP code to a mobile number (E.164)."""
+    _enforce_ip_rate_limit(request, action="otp_req", max_hits=15)
     phone = normalize_e164_phone(body.phone_number)
     code = generate_otp_code(6)
     challenge_id = new_id("otp")
@@ -184,7 +217,7 @@ async def request_phone_otp(
         expires_at=expires_at,
     )
     mode = await container.sms_sender.send_otp(phone_number=phone, code=code)
-    exposed = code if (mode == "demo" and container.settings.auth_expose_demo_otp) else None
+    exposed = code if (mode == "demo" and container.settings.effective_expose_demo_otp) else None
     return PhoneOtpRequestResponse(
         challenge_id=challenge_id,
         phone_number=phone,
@@ -196,11 +229,13 @@ async def request_phone_otp(
 
 @router.post("/phone/verify-otp", response_model=AuthSessionResponse)
 async def verify_phone_otp(
+    request: Request,
     body: PhoneOtpVerifyRequest,
-    identity: AuthIdentity | None = Depends(get_optional_identity),
+    identity: AuthIdentity | None = Depends(get_optional_link_identity),
     container: AppContainer = Depends(get_container),
 ) -> AuthSessionResponse:
     """Verify a mobile OTP challenge, upsert user (or link to signed-in session), and issue JWT."""
+    _enforce_ip_rate_limit(request, action="otp_verify", max_hits=30)
     phone = normalize_e164_phone(body.phone_number)
     expected_hash = hash_otp_code(
         challenge_id=body.challenge_id.strip(),

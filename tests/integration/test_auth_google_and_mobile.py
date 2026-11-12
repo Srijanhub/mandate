@@ -286,3 +286,218 @@ def test_jwt_issue_verify_and_expiration() -> None:
 
     with pytest.raises(ValueError):
         verify_session_token(tok, secret="wrong-secret")
+
+
+@pytest.mark.asyncio
+async def test_per_user_isolation_hides_mandates_cases_and_ledger_across_users() -> None:
+    from apps.api.routers.auth import _ip_request_buckets
+
+    _ip_request_buckets.clear()
+    settings = Settings(
+        _env_file=None,
+        database_url="sqlite+aiosqlite:///:memory:",
+        paypal_mode="mock",
+        catalog_provider="mock",
+        llm_provider="deterministic",
+        require_auth=True,
+        api_user_token="user-static-secret",
+        api_admin_token="admin-static-secret",
+        auth_jwt_secret="unit-test-jwt-secret-key-strong",
+        auth_allow_demo_mode=True,
+        auth_expose_demo_otp=True,
+        recheck_poll_interval_seconds=3600,
+    )
+    app = create_app(settings)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            alice = (
+                await client.post(
+                    "/auth/google",
+                    json={"demo_email": "alice@example.com", "demo_name": "Alice"},
+                )
+            ).json()
+            bob = (
+                await client.post(
+                    "/auth/google",
+                    json={"demo_email": "bob@example.com", "demo_name": "Bob"},
+                )
+            ).json()
+            alice_h = {"Authorization": f"Bearer {alice['access_token']}"}
+            bob_h = {"Authorization": f"Bearer {bob['access_token']}"}
+
+            # Alice creates & confirms a mandate, runs options, picks a case
+            draft_res = await client.post(
+                "/mandates/compile",
+                headers=alice_h,
+                json={"prompt": "Buy gift under $60, verified sellers only", "owner_id": bob["user"]["user_id"]},
+            )
+            assert draft_res.status_code == 201
+            mandate_id = draft_res.json()["mandate"]["mandate_id"]
+            # Spoofed owner_id in request body is ignored for signed-in JWT users
+            assert draft_res.json()["mandate"]["owner_id"] == alice["user"]["user_id"]
+
+            assert (
+                await client.post(f"/mandates/{mandate_id}/confirm", headers=alice_h)
+            ).status_code == 200
+
+            opts_res = await client.post(
+                "/commands", headers=alice_h, json={"text": "/options"}
+            )
+            assert opts_res.status_code == 200
+            assert len(opts_res.json()["options"]) >= 1
+
+            # Bob cannot /pick Alice's cached options or view/modify Alice's mandate/case/ledger
+            bob_pick = await client.post("/commands", headers=bob_h, json={"text": "/pick 1"})
+            assert bob_pick.status_code == 404
+
+            pick_res = await client.post("/commands", headers=alice_h, json={"text": "/pick 1"})
+            assert pick_res.status_code == 200
+            case_id = pick_res.json()["case"]["case_id"]
+
+            # List endpoints never leak Alice's records to Bob
+            assert (await client.get("/mandates", headers=bob_h)).json()["mandates"] == []
+            assert (
+                await client.get(f"/mandates?owner_id={alice['user']['user_id']}", headers=bob_h)
+            ).json()["mandates"] == []
+            assert (await client.get("/cases", headers=bob_h)).json()["cases"] == []
+            bob_ledger = (await client.get("/ledger", headers=bob_h)).json()
+            assert all(r["actor"] != alice["user"]["user_id"] for r in bob_ledger["rows"])
+            assert all(r["mandate_id"] != mandate_id for r in bob_ledger["rows"])
+            assert (await client.get(f"/ledger?case_id={case_id}", headers=bob_h)).json()["rows"] == []
+            assert (await client.get(f"/ledger/search?query={mandate_id}", headers=bob_h)).json()["hits"] == []
+
+            # Targeted reads & mutations return 403 FORBIDDEN for Bob
+            for method, path, kwargs in [
+                ("get", f"/mandates/{mandate_id}", {}),
+                ("post", f"/mandates/{mandate_id}/confirm", {}),
+                ("post", f"/mandates/{mandate_id}/amend", {"json": {"max_total_amount": "500.00"}}),
+                ("post", "/shopping/options", {"json": {"mandate_id": mandate_id, "query": "gift"}}),
+                ("post", "/cases/propose", {"json": {"mandate_id": mandate_id, "product_id": "prod-gift-02"}}),
+                ("get", f"/cases/{case_id}", {}),
+                ("get", f"/cases/{case_id}/why", {}),
+                ("get", f"/cases/{case_id}/receipt", {}),
+                ("get", f"/cases/{case_id}/snapshots", {}),
+                ("post", f"/cases/{case_id}/approve", {}),
+                ("post", "/commands", {"json": {"text": f"/status {case_id}"}}),
+                ("post", "/commands", {"json": {"text": f"/approve {case_id}"}}),
+            ]:
+                resp = await getattr(client, method)(path, headers=bob_h, **kwargs)
+                assert resp.status_code == 403, f"Expected 403 for Bob on {method} {path}, got {resp.status_code}"
+
+            # Bob's /revoke only revokes Bob's mandates and leaves Alice's mandate ACTIVE and case intact
+            bob_revoke = await client.post("/mandates/revoke", headers=bob_h)
+            assert bob_revoke.status_code == 200
+            assert bob_revoke.json()["revoked_mandates"] == []
+            assert (
+                await client.get(f"/mandates/{mandate_id}", headers=alice_h)
+            ).json()["mandate"]["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_relogin_ignores_expired_jwt_and_production_guards_secrets_and_redaction() -> None:
+    from adapters.errors import redact_secrets
+    from apps.api.routers.auth import _ip_request_buckets
+
+    _ip_request_buckets.clear()
+
+    # 1. Secret redaction scrubs DB passwords, Twilio SIDs, Gemini/Groq/Astropods keys & Bearer tokens
+    fake_sid = "AC" + ("1234567890abcdef" * 2)
+    fake_google_key = "AIza" + "SyDummyTestKey123456"
+    raw_err = (
+        "connect failed postgresql+asyncpg://mandate:SuperSecretDBPass99@db.render.com:5432/mandate "
+        f"sid={fake_sid} key={fake_google_key} "
+        "Authorization: Bearer top.secret.jwt.token"
+    )
+    scrubbed = redact_secrets(raw_err)
+    assert "SuperSecretDBPass99" not in scrubbed
+    assert fake_sid not in scrubbed
+    assert fake_google_key not in scrubbed
+    assert "top.secret.jwt.token" not in scrubbed
+
+    # 2. Production startup refuses dev default secrets when REQUIRE_AUTH=true
+    with pytest.raises(ValueError, match="AUTH_JWT_SECRET"):
+        create_app(
+            Settings(
+                _env_file=None,
+                app_env="production",
+                require_auth=True,
+                database_url="sqlite+aiosqlite:///:memory:",
+            )
+        )
+
+    # 3. Production automatically disables demo Google auth & inline demo_otp exposure
+    prod_app = create_app(
+        Settings(
+            _env_file=None,
+            app_env="production",
+            require_auth=True,
+            api_admin_token="prod-admin-secret-xyz",
+            api_user_token="prod-user-secret-xyz",
+            auth_jwt_secret="prod-jwt-secret-strong-256-bit",
+            database_url="sqlite+aiosqlite:///:memory:",
+            recheck_poll_interval_seconds=3600,
+        )
+    )
+    async with prod_app.router.lifespan_context(prod_app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=prod_app), base_url="http://test"
+        ) as client:
+            cfg = (await client.get("/auth/config")).json()
+            assert cfg["google_mode"] == "disabled"
+            assert cfg["demo_otp_exposed"] is False
+
+            assert (
+                await client.post("/auth/google", json={"demo_email": "attacker@example.com"})
+            ).status_code == 400
+            otp_resp = (
+                await client.post("/auth/phone/request-otp", json={"phone_number": "+14155550111"})
+            ).json()
+            assert otp_resp["demo_otp"] is None
+
+    # 4. Expired JWT in Authorization header does NOT lock user out of fresh Google sign-in
+    dev_app = create_app(
+        Settings(
+            _env_file=None,
+            database_url="sqlite+aiosqlite:///:memory:",
+            auth_jwt_secret="unit-test-jwt-secret-key",
+            auth_allow_demo_mode=True,
+            recheck_poll_interval_seconds=3600,
+        )
+    )
+    async with dev_app.router.lifespan_context(dev_app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=dev_app), base_url="http://test"
+        ) as client:
+            relogin = await client.post(
+                "/auth/google",
+                headers={"Authorization": "Bearer expired.or.invalid.jwt"},
+                json={"demo_email": "fresh@example.com", "demo_name": "Fresh Login"},
+            )
+            assert relogin.status_code == 200
+            assert relogin.json()["user"]["email"] == "fresh@example.com"
+
+            # Linking a DIFFERENT Google account to an already-Google-linked user is rejected
+            tok = relogin.json()["access_token"]
+            overwrite_attempt = await client.post(
+                "/auth/google",
+                headers={"Authorization": f"Bearer {tok}"},
+                json={"demo_email": "other@example.com"},
+            )
+            assert overwrite_attempt.status_code == 400
+
+            # 5. Per-IP sliding-window guard blocks SMS pumping across arbitrary numbers (>15 hits)
+            _ip_request_buckets.clear()
+            for idx in range(15):
+                r_ok = await client.post(
+                    "/auth/phone/request-otp",
+                    json={"phone_number": f"+1415555{1000 + idx:04d}"},
+                )
+                assert r_ok.status_code == 200
+            r_429 = await client.post(
+                "/auth/phone/request-otp",
+                json={"phone_number": "+14155559999"},
+            )
+            assert r_429.status_code == 429

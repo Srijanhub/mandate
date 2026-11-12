@@ -36,13 +36,18 @@ class StateStore(Protocol):
 
     async def get_case(self, case_id: str, *, for_update: bool = False) -> Case | None: ...
 
-    async def get_latest_case(self) -> Case | None: ...
+    async def get_latest_case(self, *, owner_id: str | None = None) -> Case | None: ...
 
     async def list_cases(
-        self, *, mandate_id: str | None = None, state: CaseState | None = None, limit: int = 50
+        self,
+        *,
+        mandate_id: str | None = None,
+        owner_id: str | None = None,
+        state: CaseState | None = None,
+        limit: int = 50,
     ) -> list[Case]: ...
 
-    async def list_open_cases(self) -> list[Case]: ...
+    async def list_open_cases(self, *, owner_id: str | None = None) -> list[Case]: ...
 
     async def list_held_or_authorized_cases(self) -> list[Case]: ...
 
@@ -67,13 +72,14 @@ class StateStore(Protocol):
         *,
         case_id: str | None = None,
         mandate_id: str | None = None,
+        owner_id: str | None = None,
         event_type: str | None = None,
         limit: int = 100,
         offset: int = 0,
         sort_dir: str = "desc",
     ) -> tuple[list[LedgerEntry], int]: ...
 
-    async def iter_all_ledger(self) -> list[LedgerEntry]: ...
+    async def iter_all_ledger(self, *, owner_id: str | None = None) -> list[LedgerEntry]: ...
 
     async def enqueue_recheck_job(self, job: RecheckJob) -> RecheckJob: ...
 

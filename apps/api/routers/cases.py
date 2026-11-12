@@ -4,14 +4,20 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from mandate_core.domain.errors import NotFoundError
-from mandate_core.domain.models import CaseState, Proposal
+from mandate_core.domain.models import Case, CaseState, Proposal
 from mandate_core.ledger import IntentReceipt
 from mandate_core.merger import diff
 from mandate_core.recheck import Checkpoint
 from mandate_core.workflows import build_proposal_from_product
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_user_auth
+from apps.api.auth import (
+    AuthIdentity,
+    assert_mandate_access,
+    get_optional_identity,
+    require_user_auth,
+    scoped_owner_id,
+)
 from apps.api.dependencies import AppContainer, get_container
 from apps.api.schemas import (
     BryntumEvent,
@@ -55,14 +61,31 @@ class AuthorizeRequest(BaseModel):
     actor: str = "user"
 
 
+async def _authorize_case(
+    case_id: str,
+    identity: AuthIdentity | None,
+    container: AppContainer,
+) -> Case:
+    case = await container.store.get_case(case_id)
+    if case is None:
+        raise NotFoundError(f"Case {case_id} not found")
+    if scoped_owner_id(identity) is not None:
+        mandate = await container.store.get_mandate(case.mandate_id)
+        if mandate is not None:
+            assert_mandate_access(mandate, identity)
+    return case
+
+
 @router.post("/propose", status_code=201, response_model=CaseResponse)
 async def propose_case(
     body: ProposeCaseRequest,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
     mandate = await container.store.get_mandate(body.mandate_id)
     if mandate is None:
         raise NotFoundError(f"Mandate {body.mandate_id} not found")
+    assert_mandate_access(mandate, identity)
     product = await container.catalog.get(body.product_id)
     if product is None:
         raise NotFoundError(f"Product {body.product_id} not found")
@@ -84,7 +107,9 @@ async def propose_case(
 
     case = await container.orchestrator.submit_proposal(prop, actor="shopping-agent")
     if body.lock_immediately and case.state == CaseState.PROPOSED:
-        case = await container.orchestrator.lock_cart(case.case_id, actor="user")
+        case = await container.orchestrator.lock_cart(
+            case.case_id, actor=scoped_owner_id(identity) or "user"
+        )
     return CaseResponse(case=case)
 
 
@@ -92,9 +117,11 @@ async def propose_case(
 async def lock_case_cart(
     case_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.orchestrator.lock_cart(case_id, actor=actor)
+    await _authorize_case(case_id, identity, container)
+    case = await container.orchestrator.lock_cart(case_id, actor=scoped_owner_id(identity) or actor)
     return CaseResponse(case=case)
 
 
@@ -102,9 +129,13 @@ async def lock_case_cart(
 async def approve_case(
     case_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.orchestrator.approve_and_capture(case_id, actor=actor)
+    await _authorize_case(case_id, identity, container)
+    case = await container.orchestrator.approve_and_capture(
+        case_id, actor=scoped_owner_id(identity) or actor
+    )
     return CaseResponse(case=case)
 
 
@@ -112,9 +143,11 @@ async def approve_case(
 async def approve_case_only(
     case_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.orchestrator.approve(case_id, actor=actor)
+    await _authorize_case(case_id, identity, container)
+    case = await container.orchestrator.approve(case_id, actor=scoped_owner_id(identity) or actor)
     return CaseResponse(case=case)
 
 
@@ -122,11 +155,15 @@ async def approve_case_only(
 async def authorize_case_only(
     case_id: str,
     body: AuthorizeRequest | None = None,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
+    await _authorize_case(case_id, identity, container)
     req = body or AuthorizeRequest()
     case = await container.orchestrator.authorize(
-        case_id, existing_order_id=req.existing_order_id, actor=req.actor
+        case_id,
+        existing_order_id=req.existing_order_id,
+        actor=scoped_owner_id(identity) or req.actor,
     )
     return CaseResponse(case=case)
 
@@ -135,9 +172,11 @@ async def authorize_case_only(
 async def capture_case_only(
     case_id: str,
     actor: str = "orchestrator",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.orchestrator.capture(case_id, actor=actor)
+    await _authorize_case(case_id, identity, container)
+    case = await container.orchestrator.capture(case_id, actor=scoped_owner_id(identity) or actor)
     return CaseResponse(case=case)
 
 
@@ -145,11 +184,13 @@ async def capture_case_only(
 async def hold_case(
     case_id: str,
     body: HoldRequest | None = None,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
+    await _authorize_case(case_id, identity, container)
     req = body or HoldRequest()
     case = await container.orchestrator.hold_case(
-        case_id, duration_seconds=req.duration_seconds, actor=req.actor
+        case_id, duration_seconds=req.duration_seconds, actor=scoped_owner_id(identity) or req.actor
     )
     return CaseResponse(case=case)
 
@@ -158,9 +199,13 @@ async def hold_case(
 async def resume_case(
     case_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.orchestrator.resume_case(case_id, actor=actor)
+    await _authorize_case(case_id, identity, container)
+    case = await container.orchestrator.resume_case(
+        case_id, actor=scoped_owner_id(identity) or actor
+    )
     return CaseResponse(case=case)
 
 
@@ -168,10 +213,14 @@ async def resume_case(
 async def cancel_case(
     case_id: str,
     body: CancelRequest | None = None,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
+    await _authorize_case(case_id, identity, container)
     req = body or CancelRequest()
-    case = await container.orchestrator.cancel(case_id, reason=req.reason, actor=req.actor)
+    case = await container.orchestrator.cancel(
+        case_id, reason=req.reason, actor=scoped_owner_id(identity) or req.actor
+    )
     return CaseResponse(case=case)
 
 
@@ -179,10 +228,12 @@ async def cancel_case(
 async def recheck_case(
     case_id: str,
     actor: str = "user",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
+    await _authorize_case(case_id, identity, container)
     case = await container.orchestrator.recheck_case(
-        case_id, checkpoint=Checkpoint.C7_BACKGROUND_SWEEP, actor=actor
+        case_id, checkpoint=Checkpoint.C7_BACKGROUND_SWEEP, actor=scoped_owner_id(identity) or actor
     )
     return CaseResponse(case=case)
 
@@ -192,9 +243,12 @@ async def list_cases(
     mandate_id: str | None = None,
     state: CaseState | None = None,
     limit: int = 50,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseListResponse:
-    rows = await container.store.list_cases(mandate_id=mandate_id, state=state, limit=limit)
+    rows = await container.store.list_cases(
+        mandate_id=mandate_id, owner_id=scoped_owner_id(identity), state=state, limit=limit
+    )
     return CaseListResponse(cases=rows)
 
 
@@ -213,10 +267,15 @@ _CASE_COLORS = {
 async def cases_timeline(
     mandate_id: str | None = None,
     limit: int = 50,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> BryntumTimelineResponse:
     """Bryntum Scheduler/Gantt compatible timeline of enforcement cases and hold windows."""
-    rows = await container.store.list_cases(mandate_id=mandate_id, limit=max(1, min(limit, 200)))
+    rows = await container.store.list_cases(
+        mandate_id=mandate_id,
+        owner_id=scoped_owner_id(identity),
+        limit=max(1, min(limit, 200)),
+    )
     seen_mandates: dict[str, BryntumResource] = {}
     events: list[BryntumEvent] = []
     for c in rows:
@@ -255,19 +314,20 @@ async def cases_timeline(
 @router.get("/{case_id}", response_model=CaseResponse)
 async def get_case(
     case_id: str,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> CaseResponse:
-    case = await container.store.get_case(case_id)
-    if case is None:
-        raise NotFoundError(f"Case {case_id} not found")
+    case = await _authorize_case(case_id, identity, container)
     return CaseResponse(case=case)
 
 
 @router.get("/{case_id}/why", response_model=WhyResponse)
 async def explain_case(
     case_id: str,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> WhyResponse:
+    await _authorize_case(case_id, identity, container)
     data = await container.orchestrator.explain_case(case_id)
     return WhyResponse.model_validate(data)
 
@@ -276,16 +336,20 @@ async def explain_case(
 async def get_case_receipt(
     case_id: str,
     narrative: Literal["auto", "deterministic", "llm"] = "auto",
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> IntentReceipt:
+    await _authorize_case(case_id, identity, container)
     return await container.orchestrator.get_case_receipt(case_id, narrative_mode=narrative)
 
 
 @router.get("/{case_id}/snapshots", response_model=SnapshotListResponse)
 async def list_case_snapshots(
     case_id: str,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> SnapshotListResponse:
+    await _authorize_case(case_id, identity, container)
     snaps = await container.store.list_snapshots(case_id)
     return SnapshotListResponse(snapshots=snaps)
 
@@ -293,8 +357,10 @@ async def list_case_snapshots(
 @router.get("/{case_id}/diff", response_model=SnapshotDiffResponse)
 async def diff_case_snapshots(
     case_id: str,
+    identity: AuthIdentity | None = Depends(get_optional_identity),
     container: AppContainer = Depends(get_container),
 ) -> SnapshotDiffResponse:
+    await _authorize_case(case_id, identity, container)
     snaps = await container.store.list_snapshots(case_id)
     if len(snaps) < 2:
         return SnapshotDiffResponse(case_id=case_id, diff=[], snapshots_count=len(snaps))

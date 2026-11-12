@@ -22,7 +22,7 @@ from mandate_core.domain.models import (
 )
 from mandate_core.ledger import GENESIS_HASH, compute_entry_hash
 from mandate_core.statemachine.transitions import OPEN_CASE_STATES
-from sqlalchemy import Select, event, func, select, text, update
+from sqlalchemy import Select, event, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import (
@@ -31,6 +31,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+
+from adapters.errors import redact_secrets
 
 from .models import (
     Base,
@@ -284,28 +286,42 @@ class SqlAlchemyStateStore:
             row = (await session.execute(stmt)).scalar_one_or_none()
             return Case.model_validate(row.data_json) if row else None
 
-    async def get_latest_case(self) -> Case | None:
+    async def get_latest_case(self, *, owner_id: str | None = None) -> Case | None:
         async with self._session() as session:
             stmt = select(CaseRow).order_by(CaseRow.updated_at.desc()).limit(1)
+            if owner_id:
+                owned_mandates = select(MandateRow.mandate_id).where(MandateRow.owner_id == owner_id)
+                stmt = stmt.where(CaseRow.mandate_id.in_(owned_mandates))
             row = (await session.execute(stmt)).scalar_one_or_none()
             return Case.model_validate(row.data_json) if row else None
 
     async def list_cases(
-        self, *, mandate_id: str | None = None, state: CaseState | None = None, limit: int = 50
+        self,
+        *,
+        mandate_id: str | None = None,
+        owner_id: str | None = None,
+        state: CaseState | None = None,
+        limit: int = 50,
     ) -> list[Case]:
         async with self._session() as session:
             stmt = select(CaseRow).order_by(CaseRow.updated_at.desc()).limit(limit)
             if mandate_id:
                 stmt = stmt.where(CaseRow.mandate_id == mandate_id)
+            if owner_id:
+                owned_mandates = select(MandateRow.mandate_id).where(MandateRow.owner_id == owner_id)
+                stmt = stmt.where(CaseRow.mandate_id.in_(owned_mandates))
             if state:
                 stmt = stmt.where(CaseRow.state == state.value)
             rows = (await session.execute(stmt)).scalars().all()
             return [Case.model_validate(r.data_json) for r in rows]
 
-    async def list_open_cases(self) -> list[Case]:
+    async def list_open_cases(self, *, owner_id: str | None = None) -> list[Case]:
         open_values = [s.value for s in OPEN_CASE_STATES]
         async with self._session() as session:
             stmt = select(CaseRow).where(CaseRow.state.in_(open_values)).order_by(CaseRow.created_at.asc())
+            if owner_id:
+                owned_mandates = select(MandateRow.mandate_id).where(MandateRow.owner_id == owner_id)
+                stmt = stmt.where(CaseRow.mandate_id.in_(owned_mandates))
             rows = (await session.execute(stmt)).scalars().all()
             return [Case.model_validate(r.data_json) for r in rows]
 
@@ -471,11 +487,21 @@ class SqlAlchemyStateStore:
             row = (await session.execute(stmt)).scalar_one_or_none()
             return self._map_ledger_row(row) if row else None
 
+    def _ledger_owner_clause(self, owner_id: str) -> Any:
+        owned_mandates = select(MandateRow.mandate_id).where(MandateRow.owner_id == owner_id)
+        owned_cases = select(CaseRow.case_id).where(CaseRow.mandate_id.in_(owned_mandates))
+        return or_(
+            LedgerEntryRow.actor == owner_id,
+            LedgerEntryRow.mandate_id.in_(owned_mandates),
+            LedgerEntryRow.case_id.in_(owned_cases),
+        )
+
     async def list_ledger(
         self,
         *,
         case_id: str | None = None,
         mandate_id: str | None = None,
+        owner_id: str | None = None,
         event_type: str | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -490,6 +516,10 @@ class SqlAlchemyStateStore:
             if mandate_id:
                 base = base.where(LedgerEntryRow.mandate_id == mandate_id)
                 cnt_q = cnt_q.where(LedgerEntryRow.mandate_id == mandate_id)
+            if owner_id:
+                clause = self._ledger_owner_clause(owner_id)
+                base = base.where(clause)
+                cnt_q = cnt_q.where(clause)
             if event_type:
                 base = base.where(LedgerEntryRow.event_type == event_type)
                 cnt_q = cnt_q.where(LedgerEntryRow.event_type == event_type)
@@ -501,11 +531,12 @@ class SqlAlchemyStateStore:
             total = int((await session.execute(cnt_q)).scalar_one())
             return [self._map_ledger_row(r) for r in rows], total
 
-    async def iter_all_ledger(self) -> list[LedgerEntry]:
+    async def iter_all_ledger(self, *, owner_id: str | None = None) -> list[LedgerEntry]:
         async with self._session() as session:
-            rows = (
-                await session.execute(select(LedgerEntryRow).order_by(LedgerEntryRow.seq.asc()))
-            ).scalars().all()
+            stmt = select(LedgerEntryRow).order_by(LedgerEntryRow.seq.asc())
+            if owner_id:
+                stmt = stmt.where(self._ledger_owner_clause(owner_id))
+            rows = (await session.execute(stmt)).scalars().all()
             return [self._map_ledger_row(r) for r in rows]
 
     async def verify_ledger_integrity(self) -> Any:
@@ -682,7 +713,7 @@ class SqlAlchemyStateStore:
             return {
                 "status": "unhealthy",
                 "dialect": getattr(self.engine.dialect, "name", "unknown"),
-                "error": str(exc),
+                "error": redact_secrets(str(exc))[:240],
             }
 
     async def seed_demo_data(
@@ -770,6 +801,8 @@ class SqlAlchemyStateStore:
                 else:
                     if link_user_id and row.user_id != link_user_id:
                         raise ValidationError("Google account is already linked to another user")
+                    if row.google_sub is not None and row.google_sub != google_sub:
+                        raise ValidationError("This user account is already linked to a different Google account")
                     providers = list(row.auth_providers_json or [])
                     if "google" not in providers:
                         providers.append("google")

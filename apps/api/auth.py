@@ -4,6 +4,8 @@ import hmac
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request
+from mandate_core.domain.errors import AuthorizationError
+from mandate_core.domain.models import Mandate
 
 from adapters.auth import verify_session_token
 from apps.api.dependencies import AppContainer, get_container
@@ -79,6 +81,34 @@ async def get_optional_identity(
     if not token:
         return None
     return _resolve_token_identity(token, container)
+
+
+async def get_optional_link_identity(
+    request: Request,
+    container: AppContainer = Depends(get_container),
+) -> AuthIdentity | None:
+    """Resolve optional identity for login/link routes without letting expired JWTs block re-login."""
+    token = _extract_token(request)
+    if not token:
+        return None
+    try:
+        return _resolve_token_identity(token, container)
+    except HTTPException:
+        return None
+
+
+def scoped_owner_id(identity: AuthIdentity | None) -> str | None:
+    """Return user_id when caller is a non-admin authenticated user (strict per-user isolation)."""
+    if identity is not None and identity.user_id and identity.role != "admin":
+        return identity.user_id
+    return None
+
+
+def assert_mandate_access(mandate: Mandate, identity: AuthIdentity | None) -> None:
+    """Reject cross-user access when a non-admin authenticated user touches another user's mandate."""
+    owner_id = scoped_owner_id(identity)
+    if owner_id is not None and mandate.owner_id != owner_id:
+        raise AuthorizationError("Access denied: resource belongs to another user")
 
 
 async def require_authenticated_identity(

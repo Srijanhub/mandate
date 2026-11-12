@@ -25,6 +25,7 @@ from mandate_core.ledger import (
     compute_receipt_hash,
     generate_intent_receipt,
     has_amount_mismatch_or_status_leak,
+    verify_receipt_hash,
 )
 
 from adapters.llm_astropods import AstropodsLLM
@@ -205,6 +206,27 @@ def test_amount_mismatch_and_state_leak_detector() -> None:
         expected_amount=usd,
         expected_state=CaseState.AWAITING_APPROVAL,
     )
+    # Labeling FLAGGED, CANCELLED, EXPIRED, NEEDS_RECONFIRM as Approved/Verified/Captured MUST fail check
+    for bad_state in (
+        CaseState.FLAGGED,
+        CaseState.CANCELLED,
+        CaseState.EXPIRED,
+        CaseState.NEEDS_RECONFIRM,
+    ):
+        for misleading in ("Approved", "Verified", "Captured"):
+            assert has_amount_mismatch_or_status_leak(
+                f"{misleading} 28.50 USD order.",
+                expected_amount=usd,
+                expected_state=bad_state,
+            )
+
+    # Identifier masking: ORD-2850-A on a 28.50 USD receipt MUST NOT trigger unscaled_int false positive
+    assert not has_amount_mismatch_or_status_leak(
+        "Verified 28.50 USD order ORD-2850-A at SELLER-A-VERIFIED.",
+        expected_amount=usd,
+        expected_state=CaseState.VERIFIED,
+        ignored_identifiers=("ORD-2850-A", "SELLER-A-VERIFIED"),
+    )
 
 
 @pytest.mark.asyncio
@@ -225,6 +247,9 @@ async def test_receipt_llm_narrative_uses_active_port_and_falls_back_on_leak_or_
     r_ok = await generate_intent_receipt(case=case, snapshot=snap, latest_ledger_entry=entry, llm=gemini)
     assert r_ok.narrative_source == "llm-narrated"
     assert "28.50 USD" in r_ok.narrative
+    assert verify_receipt_hash(r_ok) is True
+    tampered_receipt = r_ok.model_copy(update={"receipt_hash": "0" * 64})
+    assert verify_receipt_hash(tampered_receipt) is False
 
     # 2. GroqLLM leaks minor units (2850 USD) or mislabels AWAITING_APPROVAL as Blocked -> deterministic fallback, SAME receipt_hash!
     class _LeakyGroq:

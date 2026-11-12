@@ -72,7 +72,7 @@ _VOID_HTML_TAGS = frozenset(
 _BLOCK_HTML_TAGS = frozenset({"p", "div", "li", "br", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article"})
 _HIDDEN_CONTAINER_TAGS = frozenset({"script", "style", "noscript", "template", "head"})
 _HIDDEN_STYLE_RE = re.compile(
-    r"(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\.0+)?(?:\s*;|$)|font-size\s*:\s*0(?:px|em|rem|%)?(?:\s*;|$)|width\s*:\s*0(?:px)?(?:\s*;|$)|height\s*:\s*0(?:px)?(?:\s*;|$)|clip\s*:\s*rect\s*\(|text-indent\s*:\s*-\d{3,}|(?:left|top)\s*:\s*-\d{3,})",
+    r"(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\.0+)?|font-size\s*:\s*0(?:px|em|rem|%)?|width\s*:\s*0(?:px|em|rem|%)?|height\s*:\s*0(?:px|em|rem|%)?|clip\s*:\s*rect\s*\([^)]*\)|text-indent\s*:\s*-\d{3,}(?:px|em|rem|%)?|(?:left|top)\s*:\s*-\d{3,}(?:px|em|rem|%)?)(?:\s*!\s*important)?(?:\s*;|$)",
     flags=re.IGNORECASE,
 )
 _HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")

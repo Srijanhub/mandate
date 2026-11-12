@@ -109,7 +109,7 @@ async def call_with_retry(
             if timeout_seconds is not None:
                 return await asyncio.wait_for(coro, timeout=timeout_seconds)
             return await coro
-        except BaseException as exc:
+        except Exception as exc:
             retryable, error_code = classify_llm_error(exc)
             safe_detail = redact_secrets(str(exc))[:240]
             logger.warning(

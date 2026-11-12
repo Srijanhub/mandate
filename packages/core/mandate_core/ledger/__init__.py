@@ -15,6 +15,7 @@ from .receipt import (
     compute_receipt_hash,
     generate_intent_receipt,
     has_amount_mismatch_or_status_leak,
+    verify_receipt_hash,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "generate_intent_receipt",
     "has_amount_mismatch_or_status_leak",
     "verify_ledger_chain",
+    "verify_receipt_hash",
 ]

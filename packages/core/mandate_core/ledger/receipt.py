@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -131,6 +132,12 @@ def compute_receipt_hash(facts: IntentReceiptFacts) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def verify_receipt_hash(receipt: IntentReceipt) -> bool:
+    """Verify in constant time that a receipt's SHA-256 hash matches its code-verified facts."""
+    expected = compute_receipt_hash(receipt.facts)
+    return hmac.compare_digest(expected, receipt.receipt_hash)
+
+
 def _format_paypal_ref(facts: IntentReceiptFacts) -> str:
     refs: list[str] = []
     if facts.paypal_order_id:
@@ -195,16 +202,40 @@ _MONEY_TOKEN_RE = re.compile(
 )
 
 _FORBIDDEN_WORDS_BY_STATE: dict[CaseState, tuple[str, ...]] = {
-    CaseState.AWAITING_APPROVAL: ("blocked", "rejected", "denied", "captured", "verified"),
-    CaseState.HELD: ("blocked", "rejected", "denied", "captured", "verified"),
+    CaseState.AWAITING_APPROVAL: ("blocked", "rejected", "denied"),
+    CaseState.HELD: ("blocked", "rejected", "denied"),
     CaseState.VERIFIED: ("blocked", "denied", "rejected"),
     CaseState.CAPTURED: ("blocked", "denied", "rejected"),
     CaseState.AUTHORIZED: ("blocked", "denied", "rejected"),
     CaseState.APPROVED: ("blocked", "denied", "rejected"),
-    CaseState.PROPOSED: ("blocked", "captured", "verified"),
-    CaseState.CART_LOCKED: ("blocked", "captured", "verified"),
-    CaseState.CHECKED: ("blocked", "captured", "verified"),
+    CaseState.PROPOSED: ("blocked",),
+    CaseState.CART_LOCKED: ("blocked",),
+    CaseState.CHECKED: ("blocked",),
 }
+
+_FORBIDDEN_SUCCESS_WORDS_BY_STATE: dict[CaseState, tuple[str, ...]] = {
+    CaseState.PROPOSED: ("verified", "captured", "approved"),
+    CaseState.CART_LOCKED: ("verified", "captured", "approved"),
+    CaseState.CHECKED: ("verified", "captured", "approved"),
+    CaseState.AWAITING_APPROVAL: ("verified", "captured"),
+    CaseState.HELD: ("verified", "captured"),
+    CaseState.BLOCKED: ("verified", "captured", "approved"),
+    CaseState.NEEDS_RECONFIRM: ("verified", "captured", "approved"),
+    CaseState.FLAGGED: ("verified", "captured", "approved"),
+    CaseState.CANCELLED: ("verified", "captured", "approved"),
+    CaseState.EXPIRED: ("verified", "captured", "approved"),
+}
+
+
+def _mask_identifiers(text: str, identifiers: tuple[str | None, ...]) -> str:
+    masked = text
+    for ident in sorted(
+        {i.strip() for i in identifiers if isinstance(i, str) and i.strip()},
+        key=len,
+        reverse=True,
+    ):
+        masked = re.sub(re.escape(ident), " ", masked, flags=re.IGNORECASE)
+    return masked
 
 
 def has_amount_mismatch_or_status_leak(
@@ -213,12 +244,13 @@ def has_amount_mismatch_or_status_leak(
     expected_amount: Money,
     expected_state: CaseState,
     expected_unit_price: Money | None = None,
-    ignored_identifiers: tuple[str, ...] = (),
+    ignored_identifiers: tuple[str | None, ...] = (),
 ) -> bool:
     """
     Detect unscaled minor-unit leaks (e.g. '2850 USD' for 28.50 USD, '15.00 JPY' for 1500 JPY,
     '12.35 KWD' for 12.345 KWD), currency mismatches, missing authoritative amount/currency,
-    or misleading state labels (e.g. calling AWAITING_APPROVAL or HELD 'Blocked').
+    or misleading state labels (e.g. calling AWAITING_APPROVAL/HELD 'Blocked', or calling
+    FLAGGED/CANCELLED/EXPIRED/NEEDS_RECONFIRM 'Approved'/'Verified'/'Captured').
     """
     text = summary.strip()
     if len(text) < 12 or len(text) > 500:
@@ -231,11 +263,12 @@ def has_amount_mismatch_or_status_leak(
     if expected_str not in text.replace(",", ""):
         return True
 
+    masked_for_numbers = _mask_identifiers(text, ignored_identifiers)
     allowed_amounts = {expected_amount.amount}
     if expected_unit_price is not None and expected_unit_price.currency == expected_amount.currency:
         allowed_amounts.add(expected_unit_price.amount)
 
-    for m in _MONEY_TOKEN_RE.finditer(text):
+    for m in _MONEY_TOKEN_RE.finditer(masked_for_numbers):
         num_str = m.group(2) or m.group(3) or m.group(6)
         cur_code = m.group(4) or m.group(5)
         if not num_str:
@@ -260,27 +293,19 @@ def has_amount_mismatch_or_status_leak(
         unscaled_int = str(int(expected_amount.amount * (Decimal(10) ** scale)))
         if unscaled_int != expected_str and re.search(
             rf"(?<![A-Za-z0-9_.]){re.escape(unscaled_int)}(?![A-Za-z0-9_.])",
-            text,
+            masked_for_numbers,
         ):
             return True
 
-    lower = text.lower()
-    for ident in ignored_identifiers:
-        cleaned_id = ident.strip().lower()
-        if cleaned_id:
-            lower = lower.replace(cleaned_id, " ")
-    # Also mask common verified-seller descriptor phrases like 'seller-a-verified' or 'verified seller'
-    lower = re.sub(r"\bseller-[a-z0-9_-]*verified\b", " ", lower)
+    lower = re.sub(r"\bseller-[a-z0-9_-]*verified\b", " ", masked_for_numbers.lower())
 
-    forbidden = _FORBIDDEN_WORDS_BY_STATE.get(expected_state, ())
-    for word in forbidden:
+    for word in _FORBIDDEN_WORDS_BY_STATE.get(expected_state, ()):
         if re.search(rf"\b{word}\b", lower):
             return True
 
-    if expected_state == CaseState.BLOCKED and re.search(
-        r"(?<!not\s)(?<!never\s)\b(verified|captured|approved)\b", lower
-    ):
-        return True
+    for word in _FORBIDDEN_SUCCESS_WORDS_BY_STATE.get(expected_state, ()):
+        if re.search(rf"(?<!not\s)(?<!never\s)\b{word}\b", lower):
+            return True
 
     return False
 
@@ -323,6 +348,10 @@ async def generate_intent_receipt(
                     facts.seller_id,
                     facts.case_id,
                     facts.mandate_id,
+                    facts.product_id,
+                    facts.paypal_order_id,
+                    facts.paypal_authorization_id,
+                    facts.paypal_capture_id,
                     facts.title,
                 ),
             ):

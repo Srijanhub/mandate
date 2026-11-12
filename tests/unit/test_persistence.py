@@ -150,9 +150,10 @@ async def test_case_and_snapshot_lifecycle(store: SqlAlchemyStateStore) -> None:
     assert by_ckpt is not None
     assert by_ckpt.snapshot_id == "snp_1"
 
+    # Deterministic tie-breaker selects snp_2
     latest_snp = await store.get_latest_snapshot("case_100")
     assert latest_snp is not None
-    assert latest_snp.snapshot_id in ("snp_1", "snp_2")
+    assert latest_snp.snapshot_id == "snp_2"
 
     all_snps = await store.list_snapshots("case_100")
     assert len(all_snps) == 2
@@ -309,25 +310,64 @@ async def test_recheck_queue_workflow(store: SqlAlchemyStateStore) -> None:
 
 @pytest.mark.asyncio
 async def test_check_health_and_seed_demo_data(store: SqlAlchemyStateStore) -> None:
-    # Health check on clean store
+    # 1. Fast O(1) default health check on clean store
     h1 = await store.check_health()
     assert h1["status"] == "healthy"
     assert h1["dialect"] == "sqlite"
     assert h1["counts"]["mandates"] == 0
-    assert h1["ledger_valid"] is True
+    assert h1["latest_ledger_seq"] == 0
+    assert "ledger_valid" not in h1
 
-    # Seed demo data
+    # 2. Opt-in ledger verification
+    h1_opt = await store.check_health(verify_ledger=True)
+    assert h1_opt["ledger_valid"] is True
+
+    # 3. Seed demo data (atomic + Channel3 compatibility)
     res = await seed_demo_data(store)
     assert res["seeded"] is True
     assert "mnd_demo_shopping_01" in res["seeded_mandates"]
     assert res["seeded_ledger"] is True
 
-    # Idempotent second seed
+    shopping = await store.get_mandate("mnd_demo_shopping_01")
+    assert shopping is not None
+    assert shopping.allowed_sellers == []  # Open to Mock and Channel3 verified sellers
+    assert shopping.require_verified_seller is True
+    assert shopping.blocked_sellers == ["SELLER-B-ATTACKER"]
+
+    # 4. Idempotent second seed
     res2 = await seed_demo_data(store)
     assert res2["seeded"] is False
 
-    # Health check after seed
-    h2 = await store.check_health()
+    # 5. Health check after seed
+    h2 = await store.check_health(verify_ledger=True)
     assert h2["counts"]["mandates"] >= 2
     assert h2["counts"]["ledger_entries"] >= 1
+    assert h2["latest_ledger_seq"] >= 1
     assert h2["ledger_valid"] is True
+
+    # 6. Error handling test on disconnected store
+    engine_bad, factory_bad = create_engine_and_sessionmaker("sqlite+aiosqlite:///:memory:")
+    store_bad = SqlAlchemyStateStore(engine_bad, factory_bad)
+    await store_bad.dispose()
+    err_health = await store_bad.check_health()
+    assert err_health["status"] == "unhealthy"
+    assert "error" in err_health
+
+
+@pytest.mark.asyncio
+async def test_init_schema_idempotent_on_existing_database(store: SqlAlchemyStateStore) -> None:
+    """Ensure init_schema creates indexes idempotently on existing databases without error."""
+    await store.init_schema()
+    # Write a mandate and check health to confirm functionality
+    m = Mandate(
+        mandate_id="mnd_init_test",
+        version=1,
+        owner_id="bob",
+        domain="shopping",
+        intent_text="Init test",
+        max_total=Money.of("30.00", "USD"),
+        expires_at=utcnow() + timedelta(days=1),
+        status=MandateStatus.ACTIVE,
+    )
+    await store.save_mandate(m)
+    assert (await store.get_mandate("mnd_init_test")) is not None

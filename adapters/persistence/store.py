@@ -42,6 +42,7 @@ from .models import (
 )
 
 _CURRENT_SESSION: ContextVar[AsyncSession | None] = ContextVar("mandate_current_session", default=None)
+PG_LEDGER_ADVISORY_LOCK_ID: int = 73918273
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -364,7 +365,7 @@ class SqlAlchemyStateStore:
         async with self._ledger_lock:
             async with self._session() as session:
                 if self.is_postgres:
-                    await session.execute(text("SELECT pg_advisory_xact_lock(73918273)"))
+                    await session.execute(text(f"SELECT pg_advisory_xact_lock({PG_LEDGER_ADVISORY_LOCK_ID})"))
 
                 last_row = (
                     await session.execute(
@@ -638,8 +639,13 @@ class SqlAlchemyStateStore:
             "ledger_valid": bool(ledger_check.valid),
         }
 
-    async def seed_demo_data(self) -> dict[str, Any]:
+    async def seed_demo_data(
+        self,
+        *,
+        seller_a_id: str = "SELLER-A-VERIFIED",
+        seller_b_id: str = "SELLER-B-ATTACKER",
+    ) -> dict[str, Any]:
         """Idempotently seeds initial demo mandates and genesis audit trail."""
         from .seed import seed_demo_data
 
-        return await seed_demo_data(self)
+        return await seed_demo_data(self, seller_a_id=seller_a_id, seller_b_id=seller_b_id)

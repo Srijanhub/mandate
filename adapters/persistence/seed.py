@@ -10,8 +10,16 @@ from mandate_core.domain.models import (
     utcnow,
 )
 
+DEFAULT_SELLER_A_ID: str = "SELLER-A-VERIFIED"
+DEFAULT_SELLER_B_ID: str = "SELLER-B-ATTACKER"
 
-async def seed_demo_data(store: Any) -> dict[str, Any]:
+
+async def seed_demo_data(
+    store: Any,
+    *,
+    seller_a_id: str = DEFAULT_SELLER_A_ID,
+    seller_b_id: str = DEFAULT_SELLER_B_ID,
+) -> dict[str, Any]:
     """
     Idempotently seeds initial demo mandates and audit ledger records.
     Safe to run repeatedly; skips items that already exist.
@@ -32,7 +40,8 @@ async def seed_demo_data(store: Any) -> dict[str, Any]:
             max_spend_per_day=Money.of("100.00", "USD"),
             max_transactions=5,
             require_verified_seller=True,
-            allowed_sellers=["SELLER-A-PAYPAL", "SELLER-B-PAYPAL"],
+            allowed_sellers=[seller_a_id],
+            blocked_sellers=[seller_b_id],
             allowed_categories=["home", "gifts", "decor", "candles"],
             blocked_keywords=["crypto", "giftcard", "wire", "subscription"],
             deliver_by=utcnow() + timedelta(days=3),

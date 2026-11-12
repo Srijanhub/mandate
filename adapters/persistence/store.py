@@ -23,6 +23,7 @@ from mandate_core.ledger import GENESIS_HASH, compute_entry_hash
 from mandate_core.statemachine.transitions import OPEN_CASE_STATES
 from sqlalchemy import Select, event, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -41,6 +42,7 @@ from .models import (
 )
 
 _CURRENT_SESSION: ContextVar[AsyncSession | None] = ContextVar("mandate_current_session", default=None)
+PG_LEDGER_ADVISORY_LOCK_ID: int = 73918273
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -57,10 +59,15 @@ def normalize_database_url(database_url: str) -> str:
 
 def create_engine_and_sessionmaker(
     database_url: str,
+    *,
+    pool_size: int = 10,
+    max_overflow: int = 20,
+    pool_recycle: int = 1800,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     normalized_url = normalize_database_url(database_url)
     if normalized_url.startswith("sqlite"):
-        if ":///" in normalized_url and not normalized_url.endswith(":memory:"):
+        is_memory = ":memory:" in normalized_url or normalized_url.endswith("///")
+        if ":///" in normalized_url and not is_memory:
             raw_path = normalized_url.split(":///", 1)[1]
             Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
         engine = create_async_engine(normalized_url, echo=False)
@@ -69,10 +76,20 @@ def create_engine_and_sessionmaker(
         def _set_sqlite_pragmas(dbapi_conn: Any, _rec: Any) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON;")
-            cursor.execute("PRAGMA busy_timeout=5000;")
+            cursor.execute("PRAGMA busy_timeout=10000;")
+            if not is_memory:
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                cursor.execute("PRAGMA synchronous=NORMAL;")
             cursor.close()
     else:
-        engine = create_async_engine(normalized_url, echo=False, pool_pre_ping=True)
+        engine = create_async_engine(
+            normalized_url,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_recycle=pool_recycle,
+        )
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     return engine, session_factory
@@ -81,7 +98,7 @@ def create_engine_and_sessionmaker(
 class SqlAlchemyStateStore:
     """
     Async SQLAlchemy StateStore supporting PostgreSQL (advisory lock + FOR UPDATE SKIP LOCKED)
-    and SQLite (serialized async write lock) behind the Core StateStore protocol.
+    and SQLite (serialized async write lock + WAL mode) behind the Core StateStore protocol.
     """
 
     def __init__(self, engine: AsyncEngine, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -94,8 +111,27 @@ class SqlAlchemyStateStore:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+            def _ensure_indexes_exist(sync_conn: Any) -> None:
+                for table in Base.metadata.tables.values():
+                    for idx in table.indexes:
+                        try:
+                            idx.create(sync_conn, checkfirst=True)
+                        except Exception:
+                            pass
+
+            await conn.run_sync(_ensure_indexes_exist)
+
     async def dispose(self) -> None:
         await self.engine.dispose()
+
+    @asynccontextmanager
+    async def _write_lock_if_sqlite_standalone(self) -> AsyncIterator[None]:
+        """Acquire _sqlite_write_lock only for standalone writes outside atomic()."""
+        if not self.is_postgres and _CURRENT_SESSION.get() is None:
+            async with self._sqlite_write_lock:
+                yield
+        else:
+            yield
 
     @asynccontextmanager
     async def atomic(self) -> AsyncIterator[None]:
@@ -104,38 +140,27 @@ class SqlAlchemyStateStore:
             yield
             return
 
-        if not self.is_postgres:
-            async with self._sqlite_write_lock:
-                async with self.session_factory() as session:
-                    token = _CURRENT_SESSION.set(session)
-                    try:
-                        yield
-                    except (IllegalTransitionError, PolicyBlockedError):
-                        await session.commit()
-                        raise
-                    except BaseException:
-                        await session.rollback()
-                        raise
-                    else:
-                        await session.commit()
-                    finally:
-                        _CURRENT_SESSION.reset(token)
-            return
-
-        async with self.session_factory() as session:
-            token = _CURRENT_SESSION.set(session)
-            try:
-                yield
-            except (IllegalTransitionError, PolicyBlockedError):
-                await session.commit()
-                raise
-            except BaseException:
-                await session.rollback()
-                raise
-            else:
-                await session.commit()
-            finally:
-                _CURRENT_SESSION.reset(token)
+        lock = self._sqlite_write_lock if not self.is_postgres else None
+        if lock is not None:
+            await lock.acquire()
+        try:
+            async with self.session_factory() as session:
+                token = _CURRENT_SESSION.set(session)
+                try:
+                    yield
+                except (IllegalTransitionError, PolicyBlockedError):
+                    await session.commit()
+                    raise
+                except BaseException:
+                    await session.rollback()
+                    raise
+                else:
+                    await session.commit()
+                finally:
+                    _CURRENT_SESSION.reset(token)
+        finally:
+            if lock is not None:
+                lock.release()
 
     @asynccontextmanager
     async def _session(self) -> AsyncIterator[AsyncSession]:
@@ -152,29 +177,30 @@ class SqlAlchemyStateStore:
 
     async def save_mandate(self, mandate: Mandate) -> Mandate:
         payload = mandate.model_dump(mode="json")
-        async with self._session() as session:
-            row = await session.get(MandateRow, (mandate.mandate_id, mandate.version))
-            if row is None:
-                row = MandateRow(
-                    mandate_id=mandate.mandate_id,
-                    version=mandate.version,
-                    owner_id=mandate.owner_id,
-                    domain=mandate.domain,
-                    status=mandate.status.value,
-                    data_json=payload,
-                    created_at=mandate.created_at,
-                    updated_at=mandate.updated_at,
-                )
-                session.add(row)
-            else:
-                row.owner_id = mandate.owner_id
-                row.domain = mandate.domain
-                row.status = mandate.status.value
-                row.data_json = payload
-                row.updated_at = mandate.updated_at
-            await session.flush()
-            if _CURRENT_SESSION.get() is None:
-                await session.commit()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                row = await session.get(MandateRow, (mandate.mandate_id, mandate.version))
+                if row is None:
+                    row = MandateRow(
+                        mandate_id=mandate.mandate_id,
+                        version=mandate.version,
+                        owner_id=mandate.owner_id,
+                        domain=mandate.domain,
+                        status=mandate.status.value,
+                        data_json=payload,
+                        created_at=mandate.created_at,
+                        updated_at=mandate.updated_at,
+                    )
+                    session.add(row)
+                else:
+                    row.owner_id = mandate.owner_id
+                    row.domain = mandate.domain
+                    row.status = mandate.status.value
+                    row.data_json = payload
+                    row.updated_at = mandate.updated_at
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
         return mandate
 
     async def get_mandate(self, mandate_id: str, *, version: int | None = None) -> Mandate | None:
@@ -224,26 +250,27 @@ class SqlAlchemyStateStore:
 
     async def save_case(self, case: Case) -> Case:
         payload = case.model_dump(mode="json")
-        async with self._session() as session:
-            row = await session.get(CaseRow, case.case_id)
-            if row is None:
-                row = CaseRow(
-                    case_id=case.case_id,
-                    mandate_id=case.mandate_id,
-                    state=case.state.value,
-                    data_json=payload,
-                    created_at=case.created_at,
-                    updated_at=case.updated_at,
-                )
-                session.add(row)
-            else:
-                row.mandate_id = case.mandate_id
-                row.state = case.state.value
-                row.data_json = payload
-                row.updated_at = case.updated_at
-            await session.flush()
-            if _CURRENT_SESSION.get() is None:
-                await session.commit()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                row = await session.get(CaseRow, case.case_id)
+                if row is None:
+                    row = CaseRow(
+                        case_id=case.case_id,
+                        mandate_id=case.mandate_id,
+                        state=case.state.value,
+                        data_json=payload,
+                        created_at=case.created_at,
+                        updated_at=case.updated_at,
+                    )
+                    session.add(row)
+                else:
+                    row.mandate_id = case.mandate_id
+                    row.state = case.state.value
+                    row.data_json = payload
+                    row.updated_at = case.updated_at
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
         return case
 
     async def get_case(self, case_id: str, *, for_update: bool = False) -> Case | None:
@@ -291,18 +318,19 @@ class SqlAlchemyStateStore:
 
     async def save_snapshot(self, snapshot: CaseSnapshot) -> CaseSnapshot:
         payload = snapshot.model_dump(mode="json")
-        async with self._session() as session:
-            row = SnapshotRow(
-                snapshot_id=snapshot.snapshot_id,
-                case_id=snapshot.case_id,
-                checkpoint=snapshot.checkpoint,
-                data_json=payload,
-                created_at=snapshot.created_at,
-            )
-            session.add(row)
-            await session.flush()
-            if _CURRENT_SESSION.get() is None:
-                await session.commit()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                row = SnapshotRow(
+                    snapshot_id=snapshot.snapshot_id,
+                    case_id=snapshot.case_id,
+                    checkpoint=snapshot.checkpoint,
+                    data_json=payload,
+                    created_at=snapshot.created_at,
+                )
+                session.add(row)
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
         return snapshot
 
     async def get_snapshot(self, snapshot_id: str) -> CaseSnapshot | None:
@@ -310,18 +338,40 @@ class SqlAlchemyStateStore:
             row = await session.get(SnapshotRow, snapshot_id)
             return CaseSnapshot.model_validate(row.data_json) if row else None
 
+    async def get_snapshot_at_checkpoint(self, case_id: str, checkpoint: str) -> CaseSnapshot | None:
+        async with self._session() as session:
+            stmt = (
+                select(SnapshotRow)
+                .where(SnapshotRow.case_id == case_id, SnapshotRow.checkpoint == checkpoint)
+                .order_by(SnapshotRow.created_at.desc(), SnapshotRow.snapshot_id.desc())
+                .limit(1)
+            )
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            return CaseSnapshot.model_validate(row.data_json) if row else None
+
+    async def get_latest_snapshot(self, case_id: str) -> CaseSnapshot | None:
+        async with self._session() as session:
+            stmt = (
+                select(SnapshotRow)
+                .where(SnapshotRow.case_id == case_id)
+                .order_by(SnapshotRow.created_at.desc(), SnapshotRow.snapshot_id.desc())
+                .limit(1)
+            )
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            return CaseSnapshot.model_validate(row.data_json) if row else None
+
     async def list_snapshots(self, case_id: str) -> list[CaseSnapshot]:
         async with self._session() as session:
             stmt = (
                 select(SnapshotRow)
                 .where(SnapshotRow.case_id == case_id)
-                .order_by(SnapshotRow.created_at.asc())
+                .order_by(SnapshotRow.created_at.asc(), SnapshotRow.snapshot_id.asc())
             )
             rows = (await session.execute(stmt)).scalars().all()
             return [CaseSnapshot.model_validate(r.data_json) for r in rows]
 
     # ------------------------------------------------------------------
-    # Hash-Chained Ledger (Advisory Lock on Postgres)
+    # Hash-Chained Ledger (Advisory Lock on Postgres, Mutex on SQLite)
     # ------------------------------------------------------------------
 
     async def append_ledger(
@@ -333,63 +383,64 @@ class SqlAlchemyStateStore:
         event_type: str,
         payload: dict[str, Any],
     ) -> LedgerEntry:
-        async with self._session() as session:
-            if self.is_postgres:
-                await session.execute(text("SELECT pg_advisory_xact_lock(73918273)"))
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                if self.is_postgres:
+                    await session.execute(text(f"SELECT pg_advisory_xact_lock({PG_LEDGER_ADVISORY_LOCK_ID})"))
 
-            last_row = (
-                await session.execute(
-                    select(LedgerEntryRow.seq, LedgerEntryRow.hash)
-                    .order_by(LedgerEntryRow.seq.desc())
-                    .limit(1)
+                last_row = (
+                    await session.execute(
+                        select(LedgerEntryRow.seq, LedgerEntryRow.hash)
+                        .order_by(LedgerEntryRow.seq.desc())
+                        .limit(1)
+                    )
+                ).first()
+
+                seq = (last_row[0] + 1) if last_row else 1
+                prev_hash = last_row[1] if last_row else GENESIS_HASH
+                entry_id = new_id("led")
+                created_at = utcnow()
+                entry_hash = compute_entry_hash(
+                    seq=seq,
+                    entry_id=entry_id,
+                    case_id=case_id,
+                    mandate_id=mandate_id,
+                    actor=actor,
+                    event_type=event_type,
+                    payload=payload,
+                    prev_hash=prev_hash,
+                    created_at=created_at,
                 )
-            ).first()
 
-            seq = (last_row[0] + 1) if last_row else 1
-            prev_hash = last_row[1] if last_row else GENESIS_HASH
-            entry_id = new_id("led")
-            created_at = utcnow()
-            entry_hash = compute_entry_hash(
-                seq=seq,
-                entry_id=entry_id,
-                case_id=case_id,
-                mandate_id=mandate_id,
-                actor=actor,
-                event_type=event_type,
-                payload=payload,
-                prev_hash=prev_hash,
-                created_at=created_at,
-            )
+                row = LedgerEntryRow(
+                    id=entry_id,
+                    seq=seq,
+                    case_id=case_id,
+                    mandate_id=mandate_id,
+                    actor=actor,
+                    event_type=event_type,
+                    payload=payload,
+                    prev_hash=prev_hash,
+                    hash=entry_hash,
+                    created_at=created_at,
+                )
+                session.add(row)
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
 
-            row = LedgerEntryRow(
-                id=entry_id,
-                seq=seq,
-                case_id=case_id,
-                mandate_id=mandate_id,
-                actor=actor,
-                event_type=event_type,
-                payload=payload,
-                prev_hash=prev_hash,
-                hash=entry_hash,
-                created_at=created_at,
-            )
-            session.add(row)
-            await session.flush()
-            if _CURRENT_SESSION.get() is None:
-                await session.commit()
-
-            return LedgerEntry(
-                id=entry_id,
-                seq=seq,
-                case_id=case_id,
-                mandate_id=mandate_id,
-                actor=actor,
-                event_type=event_type,
-                payload=payload,
-                prev_hash=prev_hash,
-                hash=entry_hash,
-                created_at=created_at,
-            )
+                return LedgerEntry(
+                    id=entry_id,
+                    seq=seq,
+                    case_id=case_id,
+                    mandate_id=mandate_id,
+                    actor=actor,
+                    event_type=event_type,
+                    payload=payload,
+                    prev_hash=prev_hash,
+                    hash=entry_hash,
+                    created_at=created_at,
+                )
 
     def _map_ledger_row(self, r: LedgerEntryRow) -> LedgerEntry:
         ts = r.created_at if r.created_at.tzinfo else r.created_at.replace(tzinfo=UTC)
@@ -405,6 +456,17 @@ class SqlAlchemyStateStore:
             hash=r.hash,
             created_at=ts,
         )
+
+    async def get_ledger_entry(self, entry_id: str) -> LedgerEntry | None:
+        async with self._session() as session:
+            row = await session.get(LedgerEntryRow, entry_id)
+            return self._map_ledger_row(row) if row else None
+
+    async def get_ledger_by_seq(self, seq: int) -> LedgerEntry | None:
+        async with self._session() as session:
+            stmt = select(LedgerEntryRow).where(LedgerEntryRow.seq == seq)
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            return self._map_ledger_row(row) if row else None
 
     async def list_ledger(
         self,
@@ -443,26 +505,34 @@ class SqlAlchemyStateStore:
             ).scalars().all()
             return [self._map_ledger_row(r) for r in rows]
 
+    async def verify_ledger_integrity(self) -> Any:
+        """Verify the full cryptographic SHA-256 chain of the audit ledger."""
+        from mandate_core.ledger import verify_ledger_chain
+
+        entries = await self.iter_all_ledger()
+        return verify_ledger_chain(entries)
+
     # ------------------------------------------------------------------
     # Recheck Job Queue (SELECT ... FOR UPDATE SKIP LOCKED on Postgres)
     # ------------------------------------------------------------------
 
     async def enqueue_recheck_job(self, job: RecheckJob) -> RecheckJob:
-        async with self._session() as session:
-            row = RecheckJobRow(
-                job_id=job.job_id,
-                case_id=job.case_id,
-                checkpoint=job.checkpoint,
-                status=job.status,
-                run_after=job.run_after,
-                attempts=job.attempts,
-                last_error=job.last_error,
-                created_at=job.created_at,
-            )
-            session.add(row)
-            await session.flush()
-            if _CURRENT_SESSION.get() is None:
-                await session.commit()
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                row = RecheckJobRow(
+                    job_id=job.job_id,
+                    case_id=job.case_id,
+                    checkpoint=job.checkpoint,
+                    status=job.status,
+                    run_after=job.run_after,
+                    attempts=job.attempts,
+                    last_error=job.last_error,
+                    created_at=job.created_at,
+                )
+                session.add(row)
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
         return job
 
     async def claim_due_recheck_jobs(self, *, now: datetime, limit: int = 10) -> list[RecheckJob]:
@@ -508,34 +578,117 @@ class SqlAlchemyStateStore:
                     row.last_error = error
                     await session.flush()
 
+    # ------------------------------------------------------------------
+    # Webhook Idempotency (Atomic Deduplication + Commit)
+    # ------------------------------------------------------------------
+
     async def record_webhook_if_new(
         self, event_id: str, event_type: str, payload: dict[str, Any]
     ) -> bool:
-        async with self._session() as session:
-            if self.is_postgres:
-                stmt = (
-                    pg_insert(WebhookEventRow)
-                    .values(
-                        event_id=event_id,
-                        event_type=event_type,
-                        payload=payload,
-                        received_at=utcnow(),
+        async with self._write_lock_if_sqlite_standalone():
+            async with self._session() as session:
+                if self.is_postgres:
+                    stmt = (
+                        pg_insert(WebhookEventRow)
+                        .values(
+                            event_id=event_id,
+                            event_type=event_type,
+                            payload=payload,
+                            received_at=utcnow(),
+                        )
+                        .on_conflict_do_nothing(index_elements=["event_id"])
                     )
-                    .on_conflict_do_nothing(index_elements=["event_id"])
-                )
-                res = await session.execute(stmt)
-                return bool(res.rowcount == 1)
+                    res = await session.execute(stmt)
+                    inserted = bool(res.rowcount == 1)
+                else:
+                    stmt = (
+                        sqlite_insert(WebhookEventRow)
+                        .values(
+                            event_id=event_id,
+                            event_type=event_type,
+                            payload=payload,
+                            received_at=utcnow(),
+                        )
+                        .on_conflict_do_nothing(index_elements=["event_id"])
+                    )
+                    res = await session.execute(stmt)
+                    inserted = bool(res.rowcount == 1)
 
-            existing = await session.get(WebhookEventRow, event_id)
-            if existing is not None:
-                return False
-            session.add(
-                WebhookEventRow(
-                    event_id=event_id,
-                    event_type=event_type,
-                    payload=payload,
-                    received_at=utcnow(),
-                )
-            )
-            await session.flush()
-            return True
+                await session.flush()
+                if _CURRENT_SESSION.get() is None:
+                    await session.commit()
+                return inserted
+
+    # ------------------------------------------------------------------
+    # Diagnostics & Seeding
+    # ------------------------------------------------------------------
+
+    async def check_health(self, *, verify_ledger: bool = False) -> dict[str, Any]:
+        """Verify database connectivity, query latency, table row counts, and optional ledger integrity."""
+        start = asyncio.get_running_loop().time()
+        try:
+            async with self._session() as session:
+                await session.execute(text("SELECT 1"))
+                latency_ms = round((asyncio.get_running_loop().time() - start) * 1000, 2)
+
+                mandate_cnt = (
+                    await session.execute(select(func.count()).select_from(MandateRow))
+                ).scalar_one()
+                case_cnt = (
+                    await session.execute(select(func.count()).select_from(CaseRow))
+                ).scalar_one()
+                ledger_cnt = (
+                    await session.execute(select(func.count()).select_from(LedgerEntryRow))
+                ).scalar_one()
+                recheck_cnt = (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(RecheckJobRow)
+                        .where(RecheckJobRow.status == "PENDING")
+                    )
+                ).scalar_one()
+
+                last_ledger = (
+                    await session.execute(
+                        select(LedgerEntryRow.seq, LedgerEntryRow.hash)
+                        .order_by(LedgerEntryRow.seq.desc())
+                        .limit(1)
+                    )
+                ).first()
+
+            res: dict[str, Any] = {
+                "status": "healthy",
+                "dialect": self.engine.dialect.name,
+                "latency_ms": latency_ms,
+                "counts": {
+                    "mandates": int(mandate_cnt),
+                    "cases": int(case_cnt),
+                    "ledger_entries": int(ledger_cnt),
+                    "pending_rechecks": int(recheck_cnt),
+                },
+                "latest_ledger_seq": int(last_ledger[0]) if last_ledger else 0,
+                "latest_ledger_hash": str(last_ledger[1]) if last_ledger else None,
+            }
+
+            if verify_ledger:
+                ledger_check = await self.verify_ledger_integrity()
+                res["ledger_valid"] = bool(ledger_check.valid)
+
+            return res
+        except Exception as exc:
+            return {
+                "status": "unhealthy",
+                "dialect": getattr(self.engine.dialect, "name", "unknown"),
+                "error": str(exc),
+            }
+
+    async def seed_demo_data(
+        self,
+        *,
+        seller_a_id: str = "SELLER-A-VERIFIED",
+        seller_b_id: str = "SELLER-B-ATTACKER",
+    ) -> dict[str, Any]:
+        """Idempotently seeds initial demo mandates and genesis audit trail."""
+        from .seed import seed_demo_data
+
+        return await seed_demo_data(self, seller_a_id=seller_a_id, seller_b_id=seller_b_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from decimal import Decimal
 from typing import Any
@@ -51,6 +52,15 @@ def _seed_products(seller_a_id: str, seller_b_id: str) -> list[Product]:
         ("prod-b-16", "High-End Espresso Machine", "Premium stainless steel dual-boiler machine.", "499.00", "USD", "seller-a", seller_a_id, True, "home", True, 3),
         ("prod-b-17", "Designer Cashmere Coat", "Luxury tailored wool-cashmere coat.", "249.00", "USD", "seller-a", seller_a_id, True, "fashion", True, 3),
         ("prod-b-18", "Ceramic Vase Duo", "Minimalist matte stoneware vases.", "37.00", "USD", "seller-a", seller_a_id, True, "home", True, 2),
+        # INR India-market gift, electronics, home, fashion & books items (Seller A verified + 1 Seller B trap)
+        ("prod-inr-01", "Handcrafted Brass & Jasmine Candle Set", "Gift box of soy wax brass diyas and lavender-jasmine candle.", "399.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 2),
+        ("prod-inr-02", "Preserved Rose Keepsake Gift Dome", "Handcrafted glass rose gift dome with warm LED base for birthdays & anniversaries.", "479.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 2),
+        ("prod-inr-03", "Artisan Belgian Truffle Gift Tin", "Handmade dark chocolate & hazelnut truffles in a keepsake tin.", "449.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 1),
+        ("prod-inr-04", "Personalized Leather Bookmark & Pocket Journal", "Stitched A6 gift notebook with brass clip.", "425.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 2),
+        ("prod-inr-05", "Ceramic Chai & Kulhad Gift Set", "Hand-glazed stoneware cups in a jute gift hamper.", "349.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 2),
+        ("prod-inr-06", "Sterling Silver Minimalist Heart Pendant", "925 silver pendant in velvet jewelry gift box.", "1299.00", "INR", "seller-a", seller_a_id, True, "gifts", True, 2),
+        ("prod-inr-07", "Wireless Noise-Canceling Earbuds (USB-C)", "Compact charging case with 30h playback.", "1899.00", "INR", "seller-a", seller_a_id, True, "electronics", True, 2),
+        ("prod-b-inr-01", "Unverified Grey-Market Designer Gift Perfume (INR)", "Unverified discount reseller perfume.", "390.00", "INR", "seller-b", seller_b_id, False, "gifts", True, 5),
     ]
 
     products: list[Product] = []
@@ -137,10 +147,17 @@ class MockCatalog:
         filters: dict[str, Any] | None = None,
         limit: int = 20,
     ) -> list[Product]:
-        q_tokens = [t.strip().lower() for t in query.split() if t.strip()]
+        stop_words = {
+            "a", "an", "and", "at", "below", "buy", "for", "in", "inr", "limit",
+            "max", "me", "my", "of", "only", "or", "rs", "rupees", "the", "to",
+            "under", "usd", "with",
+        }
+        raw_tokens = [re.sub(r"[^a-z0-9]", "", t.lower()) for t in query.split()]
+        q_tokens = [t for t in raw_tokens if t and t not in stop_words and not t.isdigit()]
         filters = filters or {}
         verified_only = bool(filters.get("verified_only", False))
         category = str(filters["category"]).lower() if filters.get("category") else None
+        currency = str(filters["currency"]).upper() if filters.get("currency") else None
         max_price = filters.get("max_price")
 
         scored: list[tuple[int, Product]] = []
@@ -148,6 +165,8 @@ class MockCatalog:
             if verified_only and not item.seller_verified:
                 continue
             if category and item.category.lower() != category:
+                continue
+            if currency and item.price.currency != currency:
                 continue
             if max_price is not None and item.price.currency == max_price.currency and item.price > max_price:
                 continue

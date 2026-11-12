@@ -16,3 +16,6 @@ data/
 dist/
 build/
 *.egg-info/
+node_modules/
+apps/web/dist/
+*.tsbuildinfo

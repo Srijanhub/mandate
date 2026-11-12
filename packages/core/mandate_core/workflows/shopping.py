@@ -25,6 +25,24 @@ from mandate_core.ports import LLM, Catalog
 from mandate_core.rules import RuleContext, evaluate_rules
 
 CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "₹": "INR", "¥": "JPY"}
+CURRENCY_ALIASES = {
+    "rs": "INR",
+    "rs.": "INR",
+    "inr": "INR",
+    "rupee": "INR",
+    "rupees": "INR",
+    "usd": "USD",
+    "dollar": "USD",
+    "dollars": "USD",
+    "eur": "EUR",
+    "euro": "EUR",
+    "euros": "EUR",
+    "gbp": "GBP",
+    "pound": "GBP",
+    "pounds": "GBP",
+    "jpy": "JPY",
+    "yen": "JPY",
+}
 INJECTION_MARKERS = (
     "ignore previous",
     "system override",
@@ -194,22 +212,37 @@ def _deterministic_compile_dict(text: str) -> dict[str, Any]:
         currency = CURRENCY_SYMBOLS.get(sym_m.group(1), "USD")
         amount_str = sym_m.group(2)
     else:
-        code_m = re.search(r"\b([A-Z]{3})\s*(\d+(?:\.\d{1,3})?)\b", cleaned) or re.search(
-            r"\b(\d+(?:\.\d{1,3})?)\s*([A-Z]{3})\b", cleaned
+        alias_prefix = re.search(
+            r"\b(rs\.?|inr|rupees?|usd|dollars?|eur|euros?|gbp|pounds?|jpy|yen)\s*(\d+(?:\.\d{1,3})?)\b",
+            lower,
         )
-        if code_m:
-            g1, g2 = code_m.group(1), code_m.group(2)
-            if g1.isalpha():
-                currency, amount_str = g1, g2
-            else:
-                amount_str, currency = g1, g2
+        alias_suffix = re.search(
+            r"\b(\d+(?:\.\d{1,3})?)\s*(rs\.?|inr|rupees?|usd|dollars?|eur|euros?|gbp|pounds?|jpy|yen)\b",
+            lower,
+        )
+        if alias_prefix:
+            currency = CURRENCY_ALIASES.get(alias_prefix.group(1), "USD")
+            amount_str = alias_prefix.group(2)
+        elif alias_suffix:
+            amount_str = alias_suffix.group(1)
+            currency = CURRENCY_ALIASES.get(alias_suffix.group(2), "USD")
         else:
-            bare_m = re.search(
-                r"\b(?:under|max|maximum|at\s+most|up\s+to|cap|limit|budget(?:\s+of)?)\s+(\d+(?:\.\d{1,2})?)\b",
-                lower,
+            code_m = re.search(r"\b([A-Z]{3})\s*(\d+(?:\.\d{1,3})?)\b", cleaned) or re.search(
+                r"\b(\d+(?:\.\d{1,3})?)\s*([A-Z]{3})\b", cleaned
             )
-            if bare_m:
-                amount_str = bare_m.group(1)
+            if code_m:
+                g1, g2 = code_m.group(1), code_m.group(2)
+                if g1.isalpha():
+                    currency, amount_str = g1, g2
+                else:
+                    amount_str, currency = g1, g2
+            else:
+                bare_m = re.search(
+                    r"\b(?:under|max|maximum|at\s+most|up\s+to|cap|limit|budget(?:\s+of)?)\s+(\d+(?:\.\d{1,2})?)\b",
+                    lower,
+                )
+                if bare_m:
+                    amount_str = bare_m.group(1)
 
     if not amount_str:
         raise ValidationError(
@@ -352,51 +385,57 @@ async def search_and_ask_preference(
       3. Score deterministically + ask LLM to rank/explain ONLY among candidate IDs
          (validates LLM output IDs are a strict subset of input candidate IDs).
     """
-    raw_products = await catalog.search(
-        query,
-        filters={"verified_only": mandate.require_verified_seller},
-        limit=20,
-    )
+    search_filters = {
+        "verified_only": mandate.require_verified_seller,
+        "currency": mandate.max_total.currency,
+        "max_price": mandate.max_total,
+    }
+    raw_products = await catalog.search(query, filters=search_filters, limit=50)
 
-    eligible: list[tuple[Product, float]] = []
-    for p in raw_products:
-        prop = Proposal(
-            mandate_id=mandate.mandate_id,
-            product_id=p.product_id,
-            title=p.title,
-            quantity=1,
-            claimed_unit_price=p.price,
-            claimed_total=p.price,
-            claimed_seller_id=p.seller_id,
-            claimed_payee_id=p.payee_id,
-            category=p.category,
-        )
-        snap, merger_findings = build_snapshot(
-            case_id="prefilter",
-            checkpoint="PREFILTER",
-            mandate=mandate,
-            proposal=prop,
-            catalog_item=p,
-        )
-        if any(f.severity == FindingSeverity.BLOCK for f in merger_findings):
-            continue
-
-        # Temporarily evaluate rules treating mandate as ACTIVE during pre-filter if still drafting
+    def _collect_eligible(products: list[Product]) -> list[tuple[Product, float]]:
+        items: list[tuple[Product, float]] = []
         eval_mandate = (
             mandate.model_copy(update={"status": MandateStatus.ACTIVE})
             if mandate.status == MandateStatus.DRAFT
             else mandate
         )
-        decision = evaluate_rules(RuleContext(mandate=eval_mandate, snapshot=snap))
-        if not decision.allow:
-            continue
+        for p in products:
+            prop = Proposal(
+                mandate_id=mandate.mandate_id,
+                product_id=p.product_id,
+                title=p.title,
+                quantity=1,
+                claimed_unit_price=p.price,
+                claimed_total=p.price,
+                claimed_seller_id=p.seller_id,
+                claimed_payee_id=p.payee_id,
+                category=p.category,
+            )
+            snap, merger_findings = build_snapshot(
+                case_id="prefilter",
+                checkpoint="PREFILTER",
+                mandate=mandate,
+                proposal=prop,
+                catalog_item=p,
+            )
+            if any(f.severity == FindingSeverity.BLOCK for f in merger_findings):
+                continue
 
-        # Deterministic score: headroom under cap + faster delivery + verified bonus
-        headroom = float((mandate.max_total.amount - p.price.amount) / mandate.max_total.amount)
-        speed_bonus = max(0.0, (7 - p.estimated_delivery_days) * 0.05)
-        verified_bonus = 0.25 if p.seller_verified else 0.0
-        score = round(1.0 + headroom * 0.5 + speed_bonus + verified_bonus, 4)
-        eligible.append((p, score))
+            decision = evaluate_rules(RuleContext(mandate=eval_mandate, snapshot=snap))
+            if not decision.allow:
+                continue
+
+            headroom = float((mandate.max_total.amount - p.price.amount) / mandate.max_total.amount)
+            speed_bonus = max(0.0, (7 - p.estimated_delivery_days) * 0.05)
+            verified_bonus = 0.25 if p.seller_verified else 0.0
+            score = round(1.0 + headroom * 0.5 + speed_bonus + verified_bonus, 4)
+            items.append((p, score))
+        return items
+
+    eligible = _collect_eligible(raw_products)
+    if not eligible and query.strip():
+        broad_products = await catalog.search("", filters=search_filters, limit=50)
+        eligible = _collect_eligible(broad_products)
 
     eligible.sort(key=lambda pair: (-pair[1], pair[0].price.amount))
     candidate_products = [p for p, _ in eligible[: max(limit, 8)]]

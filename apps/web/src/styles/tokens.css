@@ -1,0 +1,117 @@
+/* ============================================================================
+   Mandate Official Design Tokens
+   Dark Mode: Smoked Titanium (#101216, #191D23, #252B33, #A9B0B9, #B69A70, #E8E9E6)
+   Light Mode: Porcelain & Steel (#F4F3EF, #FFFFFF, #E9E8E3, #D0D2D1, #59636E, #92764F)
+   ============================================================================ */
+
+:root {
+  --font-display: 'Instrument Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --ease-physical: cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-theme: background-color 220ms var(--ease-physical),
+    color 220ms var(--ease-physical), border-color 220ms var(--ease-physical),
+    box-shadow 220ms var(--ease-physical);
+
+  --sidebar-width: 252px;
+  --inspector-width: 340px;
+  --topbar-height: 56px;
+}
+
+/* DARK MODE — SMOKED TITANIUM */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-main: #101216;
+  --bg-sidebar: #191D23;
+  --bg-surface: #191D23;
+  --bg-elevated: #252B33;
+  --bg-subtle: rgba(169, 176, 185, 0.06);
+  --bg-hover: rgba(169, 176, 185, 0.1);
+  --bg-glass: rgba(25, 29, 35, 0.72);
+  --bg-glass-strong: rgba(37, 43, 51, 0.84);
+
+  --text-primary: #E8E9E6;
+  --text-secondary: #A9B0B9;
+  --text-muted: #7C848F;
+
+  --accent-titanium: #A9B0B9;
+  --accent-brass: #B69A70;
+  --accent-brass-soft: rgba(182, 154, 112, 0.14);
+  --accent-brass-border: rgba(182, 154, 112, 0.36);
+
+  --border-subtle: rgba(169, 176, 185, 0.14);
+  --border-strong: rgba(169, 176, 185, 0.26);
+
+  /* Restrained semantic status tones aligned to Smoked Titanium */
+  --status-verified-bg: rgba(92, 154, 118, 0.14);
+  --status-verified-fg: #7FC89E;
+  --status-verified-border: rgba(92, 154, 118, 0.34);
+
+  --status-warn-bg: rgba(182, 154, 112, 0.15);
+  --status-warn-fg: #D5BA8F;
+  --status-warn-border: rgba(182, 154, 112, 0.38);
+
+  --status-danger-bg: rgba(196, 92, 92, 0.15);
+  --status-danger-fg: #E58C8C;
+  --status-danger-border: rgba(196, 92, 92, 0.36);
+
+  --status-neutral-bg: rgba(169, 176, 185, 0.12);
+  --status-neutral-fg: #A9B0B9;
+  --status-neutral-border: rgba(169, 176, 185, 0.24);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.36);
+}
+
+/* LIGHT MODE — PORCELAIN & STEEL */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-main: #F4F3EF;
+  --bg-sidebar: #E9E8E3;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-subtle: #E9E8E3;
+  --bg-hover: rgba(89, 99, 110, 0.08);
+  --bg-glass: rgba(255, 255, 255, 0.78);
+  --bg-glass-strong: rgba(244, 243, 239, 0.88);
+
+  --text-primary: #181B20;
+  --text-secondary: #59636E;
+  --text-muted: #707983;
+
+  --accent-titanium: #59636E;
+  --accent-brass: #92764F;
+  --accent-brass-soft: rgba(146, 118, 79, 0.11);
+  --accent-brass-border: rgba(146, 118, 79, 0.34);
+
+  --border-subtle: #D0D2D1;
+  --border-strong: #B8BCBC;
+
+  /* Restrained semantic status tones aligned to Porcelain & Steel */
+  --status-verified-bg: rgba(44, 116, 75, 0.1);
+  --status-verified-fg: #23633F;
+  --status-verified-border: rgba(44, 116, 75, 0.28);
+
+  --status-warn-bg: rgba(146, 118, 79, 0.12);
+  --status-warn-fg: #745B38;
+  --status-warn-border: rgba(146, 118, 79, 0.34);
+
+  --status-danger-bg: rgba(168, 56, 56, 0.1);
+  --status-danger-fg: #992F2F;
+  --status-danger-border: rgba(168, 56, 56, 0.28);
+
+  --status-neutral-bg: #E9E8E3;
+  --status-neutral-fg: #59636E;
+  --status-neutral-border: #D0D2D1;
+
+  --shadow-sm: 0 1px 2px rgba(24, 27, 32, 0.05);
+  --shadow-md: 0 14px 32px rgba(24, 27, 32, 0.08);
+}

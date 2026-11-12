@@ -489,8 +489,12 @@ async def test_security_hardening_lazy_elastic_render_channel3_and_concurrent_pr
                 created_at=now,
                 updated_at=now,
             )
-            await lazy_container.store.save_mandate(past_mandate)
-            sched = (await client.get("/mandates/schedule")).json()
+            async with lazy_container.store.atomic():
+                await lazy_container.store.save_mandate(past_mandate)
+            r_sched = await client.get("/mandates/schedule")
+            assert r_sched.status_code == 200
+            sched = r_sched.json()
+            assert len(sched["events"]) == 1, f"Expected 1 schedule event, got {sched}"
             assert sched["events"][0]["endDate"] >= sched["events"][0]["startDate"]
 
     led_docs = serialize_ledger_docs(
